@@ -32,6 +32,15 @@ Private Const KB As Currency = 1024
 Private Const MB As Currency = KB * KB      ' 1,048,576
 Private Const GB As Currency = MB * KB      ' 1,073,741,824
 
+' Параметры таймаута (в миллисекундах)
+Private m_timeoutResolve As Long      ' Таймаут на разрешение DNS
+Private m_timeoutConnect As Long      ' Таймаут на подключение
+Private m_timeoutSend As Long         ' Таймаут на отправку
+Private m_timeoutReceive As Long      ' Таймаут на получение данных
+
+' Параметры буферизированной записи
+Private m_useBufferedWrite As Boolean ' Использовать буферизированную запись
+Private m_bufferSize As Long          ' Размер буфера для записи (байты)
 
 Public Event WorkerComplete(ByVal taskId As Long, ByVal success As Boolean)
 
@@ -48,7 +57,16 @@ Public Sub Init(ByVal taskId As Long, ByVal url As String, ByVal destPath As Str
     m_startTime = Timer
     m_lastReportedPercent = -1
     m_chunkCounter = 0
-
+    
+    ' Значения таймаутов по умолчанию (60 секунд)
+    m_timeoutResolve = 60000
+    m_timeoutConnect = 60000
+    m_timeoutSend = 60000
+    m_timeoutReceive = 60000
+    
+    ' Параметры буферизированной записи по умолчанию
+    m_useBufferedWrite = True
+    m_bufferSize = 64 * 1024  ' 64 KB
     
     ' Создаём защитный колбэк, который вызовет макрос даже при сбросе VBA
     Set m_lossCallback = New StateLossCallback
@@ -60,6 +78,23 @@ Public Sub SetManager(ByVal manager As CAsyncDownloadManager)
     Set m_manager = manager
 End Sub
 
+' Установка таймаутов (в миллисекундах)
+Public Sub SetTimeouts(Optional ByVal resolveTimeout As Long = 60000, _
+                       Optional ByVal connectTimeout As Long = 60000, _
+                       Optional ByVal sendTimeout As Long = 60000, _
+                       Optional ByVal receiveTimeout As Long = 60000)
+    m_timeoutResolve = resolveTimeout
+    m_timeoutConnect = connectTimeout
+    m_timeoutSend = sendTimeout
+    m_timeoutReceive = receiveTimeout
+End Sub
+
+' Установка параметров буферизированной записи
+Public Sub SetBufferedWriteOptions(ByVal useBufferedWrite As Boolean, Optional ByVal bufferSize As Long = 65536)
+    m_useBufferedWrite = useBufferedWrite
+    If bufferSize > 0 Then m_bufferSize = bufferSize
+End Sub
+
 ' Запуск асинхронной загрузки
 Public Sub Start()
     ' Создаём бинарный поток для сохранения данных
@@ -69,6 +104,19 @@ Public Sub Start()
     
     ' Асинхронный GET-запрос
     m_http.Open "GET", m_url, True
+    
+    ' Устанавливаем таймауты (WinHTTP: 0 = бесконечность)
+    ' WinHttpRequestOption_ResolveTimeout = 0
+    ' WinHttpRequestOption_ConnectTimeout = 1
+    ' WinHttpRequestOption_SendTimeout = 2
+    ' WinHttpRequestOption_ReceiveTimeout = 3
+    On Error Resume Next
+    m_http.SetOption 0, m_timeoutResolve
+    m_http.SetOption 1, m_timeoutConnect
+    m_http.SetOption 2, m_timeoutSend
+    m_http.SetOption 3, m_timeoutReceive
+    On Error GoTo 0
+    
     m_http.Send
     
     ' Уведомляем callback о начале загрузки
@@ -177,6 +225,9 @@ Private Sub m_http_OnResponseFinished()
     Dim success As Boolean
     Dim errorMsg As String
     Dim fso As Object
+    Dim fileSaved As Boolean
+    
+    fileSaved = False
     
     ' Проверяем HTTP статус
     If m_http.status = 200 Then
@@ -188,18 +239,47 @@ Private Sub m_http_OnResponseFinished()
         If folder <> "" And Not fso.FolderExists(folder) Then
             fso.CreateFolder folder
         End If
-        ' Сохраняем поток в файл
-        m_stream.SaveToFile m_destPath, 2   ' adSaveCreateOverWrite
-        If Err.Number = 0 Then
+        
+        ' Сохраняем файл: буферизированная запись или через SaveToFile
+        If m_useBufferedWrite Then
+            fileSaved = SaveFileBuffered(fso)
+        Else
+            ' Старый метод - сохранение всего потока сразу
+            m_stream.SaveToFile m_destPath, 2   ' adSaveCreateOverWrite
+            If Err.Number = 0 Then
+                fileSaved = True
+            Else
+                fileSaved = False
+                errorMsg = "Ошибка сохранения файла: " & Err.Description
+            End If
+        End If
+        
+        If fileSaved Then
             success = True
         Else
             success = False
-            errorMsg = "Ошибка сохранения файла: " & Err.Description
+            If errorMsg = "" Then errorMsg = "Неизвестная ошибка сохранения файла"
         End If
         On Error GoTo 0
     Else
         success = False
         errorMsg = "HTTP " & m_http.status & " " & m_http.StatusText
+    End If
+    
+    ' Проверка на случай, если событие не было обработано, но файл уже существует
+    ' и его размер равен Content-Length
+    If Not success And m_totalBytes > 0 Then
+        If FileSizeMatchesContentLength(fso, m_destPath, m_totalBytes) Then
+            ' Файл успешно сохранён, но событие не сработало корректно
+            success = True
+            errorMsg = ""
+            Debug.Print "Задача " & m_taskId & ": Файл восстановлен по размеру (Content-Length = " & m_totalBytes & ")"
+            
+            ' Обновляем прогресс до 100%
+            If Not m_callback Is Nothing Then
+                m_callback.OnProgress m_taskId, m_totalBytes, m_totalBytes, 100
+            End If
+        End If
     End If
     
     ' Освобождаем ресурсы
@@ -216,6 +296,95 @@ Private Sub m_http_OnResponseFinished()
     End If
     RaiseEvent WorkerComplete(m_taskId, success)
 End Sub
+
+' Буферизированная запись файла из потока ADODB.Stream
+' Разбивает сохранение на части, чтобы не блокировать обработку событий WinHTTP
+Private Function SaveFileBuffered(ByVal fso As Object) As Boolean
+    Dim totalSize As Long
+    Dim offset As Long
+    Dim chunkSize As Long
+    Dim fileNum As Integer
+    Dim chunkData() As Byte
+    
+    SaveFileBuffered = False
+    
+    On Error Resume Next
+    
+    ' Получаем общий размер данных в потоке
+    totalSize = m_stream.Size
+    
+    If totalSize = 0 Then
+        ' Пустой файл - создаём и выходим
+        fileNum = FreeFile
+        Open m_destPath For Binary Access Write As #fileNum
+        Close #fileNum
+        SaveFileBuffered = True
+        Exit Function
+    End If
+    
+    ' Определяем размер чанка для записи
+    chunkSize = m_bufferSize
+    If chunkSize <= 0 Then chunkSize = 65536  ' 64 KB по умолчанию
+    
+    ' Открываем файл для бинарной записи
+    fileNum = FreeFile
+    Open m_destPath For Binary Access Write As #fileNum
+    
+    ' Сбрасываем позицию потока в начало
+    m_stream.Position = 0
+    
+    ' Записываем файл частями, позволяя DoEvents обрабатывать другие события
+    offset = 1
+    Do While offset <= totalSize
+        Dim writeSize As Long
+        writeSize = chunkSize
+        If offset + writeSize - 1 > totalSize Then
+            writeSize = totalSize - offset + 1
+        End If
+        
+        ' Читаем чанк из потока
+        chunkData = m_stream.Read(writeSize)
+        
+        ' Записываем чанк в файл
+        If UBound(chunkData) >= 0 Then
+            Put #fileNum, offset, chunkData
+        End If
+        
+        ' Позволяем обработать другие события (важно для асинхронности)
+        DoEvents
+        
+        offset = offset + writeSize
+    Loop
+    
+    Close #fileNum
+    
+    If Err.Number = 0 Then
+        SaveFileBuffered = True
+    Else
+        SaveFileBuffered = False
+        Err.Clear
+    End If
+    
+    On Error GoTo 0
+End Function
+
+' Проверка соответствия размера файла значению Content-Length
+Private Function FileSizeMatchesContentLength(ByVal fso As Object, ByVal filePath As String, ByVal expectedSize As Currency) As Boolean
+    Dim fileSize As Currency
+    
+    FileSizeMatchesContentLength = False
+    
+    On Error Resume Next
+    
+    If fso.FileExists(filePath) Then
+        fileSize = fso.GetFile(filePath).Size
+        If fileSize = expectedSize Then
+            FileSizeMatchesContentLength = True
+        End If
+    End If
+    
+    On Error GoTo 0
+End Function
 
 ' Событие: ошибка WinHTTP
 Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As String)

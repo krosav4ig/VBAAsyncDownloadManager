@@ -20,6 +20,16 @@ Private m_activeWorkers   As Collection   ' ключ – taskId, значение – CAsyncDown
 Private m_nextTaskId      As Long
 Private m_isRunning       As Boolean
 
+' Параметры таймаута по умолчанию для всех рабочих процессов
+Private m_defaultTimeoutResolve As Long
+Private m_defaultTimeoutConnect As Long
+Private m_defaultTimeoutSend As Long
+Private m_defaultTimeoutReceive As Long
+
+' Параметры буферизированной записи по умолчанию
+Private m_defaultUseBufferedWrite As Boolean
+Private m_defaultBufferSize As Long
+
 Public Event AllTasksCompleted()
 
 ' Инициализация менеджера
@@ -30,6 +40,16 @@ Public Sub Init(ByVal maxConcurrent As Long, ByVal callback As IDownloadCallback
     Set m_activeWorkers = New Collection
     m_nextTaskId = 1
     m_isRunning = False
+    
+    ' Таймауты по умолчанию (60 секунд)
+    m_defaultTimeoutResolve = 60000
+    m_defaultTimeoutConnect = 60000
+    m_defaultTimeoutSend = 60000
+    m_defaultTimeoutReceive = 60000
+    
+    ' Буферизированная запись по умолчанию включена
+    m_defaultUseBufferedWrite = True
+    m_defaultBufferSize = 64 * 1024  ' 64 KB
 End Sub
 
 ' Добавление задачи в очередь
@@ -69,12 +89,37 @@ Private Function LaunchNextWorker() As Boolean
     Set worker = New CAsyncDownloadWorker
     worker.Init taskId, url, destPath, m_callback
     worker.SetManager Me
+    
+    ' Устанавливаем таймауты из настроек менеджера
+    worker.SetTimeouts m_defaultTimeoutResolve, m_defaultTimeoutConnect, _
+                       m_defaultTimeoutSend, m_defaultTimeoutReceive
+    
+    ' Устанавливаем параметры буферизированной записи
+    worker.SetBufferedWriteOptions m_defaultUseBufferedWrite, m_defaultBufferSize
+    
     worker.Start
     
     ' Сохраняем активный воркер
     m_activeWorkers.Add worker, CStr(taskId)
     LaunchNextWorker = True
 End Function
+
+' Установка таймаутов по умолчанию для всех новых рабочих процессов (в миллисекундах)
+Public Sub SetDefaultTimeouts(Optional ByVal resolveTimeout As Long = 60000, _
+                              Optional ByVal connectTimeout As Long = 60000, _
+                              Optional ByVal sendTimeout As Long = 60000, _
+                              Optional ByVal receiveTimeout As Long = 60000)
+    m_defaultTimeoutResolve = resolveTimeout
+    m_defaultTimeoutConnect = connectTimeout
+    m_defaultTimeoutSend = sendTimeout
+    m_defaultTimeoutReceive = receiveTimeout
+End Sub
+
+' Установка параметров буферизированной записи по умолчанию
+Public Sub SetDefaultBufferedWriteOptions(ByVal useBufferedWrite As Boolean, Optional ByVal bufferSize As Long = 65536)
+    m_defaultUseBufferedWrite = useBufferedWrite
+    If bufferSize > 0 Then m_defaultBufferSize = bufferSize
+End Sub
 
 ' Вызывается рабочим процессом по завершении (успех/ошибка)
 Public Sub OnWorkerComplete(ByVal taskId As Long, ByVal success As Boolean)

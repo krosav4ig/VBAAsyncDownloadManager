@@ -1,0 +1,55 @@
+```
+# VBA compiled files
+*.frm
+*.frx
+*.bas
+*.cls
+*.vbp
+*.vbw
+*.scc
+*.cache
+
+# Office/VBA specific
+*.accdb
+*.mdb
+*.accde
+*.mde
+*.ldb
+*.laccdb
+
+# Build outputs
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# Dependencies
+packages/
+node_modules/
+.nuget/
+
+# Logs
+*.log
+*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vs/
+.vshost/
+.user
+.userosscache
+.suo
+*.userprefs
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+```
