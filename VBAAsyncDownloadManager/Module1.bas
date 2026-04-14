@@ -42,27 +42,7 @@ Sub StartBatchDownload()
     Set g_manager = New CAsyncDownloadManager
     g_manager.Init maxConcurrent:=3, callback:=g_logger
     
-    ' 4. НАСТРОЙКА ТАЙМАУТОВ (в миллисекундах)
-    '    Для избежания ошибки -2147012894 (таймаут соединения) рекомендуется:
-    '    - resolveTimeout: время на разрешение DNS (60000 = 60 сек)
-    '    - connectTimeout: время на подключение к серверу (120000 = 120 сек)
-    '    - sendTimeout: время на отправку запроса (60000 = 60 сек)
-    '    - receiveTimeout: время на получение данных (300000 = 5 мин для больших файлов)
-    g_manager.SetDefaultTimeouts _
-        resolveTimeout:=60000, _
-        connectTimeout:=120000, _
-        sendTimeout:=60000, _
-        receiveTimeout:=300000
-    
-    ' 5. НАСТРОЙКА БУФЕРИЗИРОВАННОЙ ЗАПИСИ
-    '    useBufferedWrite:=True - разбивает сохранение на части, не блокируя события WinHTTP
-    '    bufferSize:=65536 - размер буфера в байтах (64 KB по умолчанию)
-    '    Для очень больших файлов можно увеличить до 256*1024 или 512*1024
-    g_manager.SetDefaultBufferedWriteOptions _
-        useBufferedWrite:=True, _
-        bufferSize:=65536
-    
-    ' 6. Добавляем задачи (URL, путь сохранения)
+    ' 4. Добавляем задачи (URL, путь сохранения)
     '    При необходимости измените пути на существующие папки на вашем диске
     
     Dim col1&, col2&, col3&, arr() As Variant, i&
@@ -78,17 +58,17 @@ Sub StartBatchDownload()
         
     End With
     
-    ' 7. Запускаем загрузки
+    ' 5. Запускаем загрузки
     g_manager.Start
     
-    ' 8. Цикл ожидания с сохранением отзывчивости Excel
+    ' 6. Цикл ожидания с сохранением отзывчивости Excel
     '    Прервать можно нажатием Ctrl+Break (или Esc)
     Do While g_manager.IsBusy
         DoEvents
         Sleep 100   ' небольшая пауза для снижения нагрузки на процессор
     Loop
     
-    ' 9. Очистка и завершение
+    ' 7. Очистка и завершение
     Set g_manager = Nothing
     Set g_logger = Nothing
     MsgBox "Все загрузки завершены!", vbInformation
