@@ -148,7 +148,14 @@ Private Sub IDownloadCallback_OnComplete(ByVal taskId As Long, ByVal url As Stri
         On Error Resume Next
         Open m_backupLogPath For Append As #1
         Print #1, Now & " | Задача " & taskId & " | " & status & " | " & url
-        If Not success Then Print #1, "Ошибка: " & errorMsg
+        If Not success Then 
+            Print #1, "Ошибка: " & errorMsg
+        Else
+            ' Логирование успешного завершения с информацией о восстановлении файла
+            If InStr(errorMsg, "восстановлен") > 0 Or errorMsg = "" Then
+                Print #1, "Файл успешно сохранён"
+            End If
+        End If
         Close #1
         On Error GoTo 0
     End If
