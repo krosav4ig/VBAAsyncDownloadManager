@@ -17,7 +17,7 @@ Option Explicit
 ' taskId   - идентификатор задачи
 ' url      - исходный URL
 ' destPath - путь сохранения
-Public Sub OnStart(ByVal taskId As Long, ByVal url As String, ByVal destPath As String)
+Public Sub OnStart(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String)
 End Sub
 
 ' Уведомление о прогрессе загрузки
@@ -25,7 +25,7 @@ End Sub
 ' bytesReceived - получено байт (Currency для больших файлов)
 ' totalBytes    - всего байт (0, если неизвестно)
 ' percent       - процент выполнения (от 0 до 100, -1 если неизвестно)
-Public Sub OnProgress(ByVal taskId As Long, ByVal bytesReceived As Currency, _
+Public Sub OnProgress(ByVal TaskId As Long, ByVal bytesReceived As Currency, _
                       ByVal totalBytes As Currency, ByVal percent As Integer)
 End Sub
 
@@ -35,7 +35,8 @@ End Sub
 ' destPath      - путь сохранения
 ' success       - успех (True/False)
 ' errorMsg      - текст ошибки (пусто, если success=True)
-Public Sub OnComplete(ByVal taskId As Long, ByVal url As String, ByVal destPath As String, _
+Public Sub OnComplete(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String, _
                       ByVal success As Boolean, ByVal errorMsg As String)
 End Sub
+
 

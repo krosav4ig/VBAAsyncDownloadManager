@@ -9,7 +9,7 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
 ' Модуль: CAsyncDownloadWorker.cls
-' Назначение: Асинхронная загрузка одного файла через WinHTTP с событиями
+' Назначение: Асинхронная загрузка с буферизацией, таймаутами и проверкой файла
 ' ============================================================================
 Option Explicit
 
@@ -22,56 +22,77 @@ Private m_callback As IDownloadCallback
 Private m_manager As CAsyncDownloadManager
 Private m_totalBytes As Currency
 Private m_receivedBytes As Currency
-Private m_stream As Object          ' ADODB.Stream
-Private m_lossCallback As StateLossCallback   ' защита от потери состояния
+Private m_fileWriter As CFileWriter
+Private m_lossCallback As StateLossCallback
 Private m_startTime As Double
-Private m_lastReportedPercent As Integer   ' Для оптимизации событий прогресса
-Private m_chunkCounter As Long              ' Счётчик фрагментов для пропуска
-Private Const MAX_LONG As Long = 2147483647   ' 2^31 - 1
+Private m_lastReportedPercent As Integer
+Private m_chunkCounter As Long
+Private m_isCompleted As Boolean          ' Флаг для предотвращения двойного завершения
+Private m_expectedSize As Currency        ' Content-Length (0 если неизвестен)
+Private m_bufferSize As Long              ' Размер буфера записи
+
+' Таймауты WinHTTP
+Private m_resolveTimeout As Long
+Private m_connectTimeout As Long
+Private m_sendTimeout As Long
+Private m_receiveTimeout As Long
+
 Private Const KB As Currency = 1024
-Private Const MB As Currency = KB * KB      ' 1,048,576
-Private Const GB As Currency = MB * KB      ' 1,073,741,824
+Private Const MB As Currency = KB * 1024      ' 1,048,576
+Private Const GB As Currency = MB * 1024      ' 1,073,741,824
 
+Public Event WorkerComplete(ByVal TaskId As Long, ByVal success As Boolean)
 
-Public Event WorkerComplete(ByVal taskId As Long, ByVal success As Boolean)
-
-' Инициализация рабочего процесса
-Public Sub Init(ByVal taskId As Long, ByVal url As String, ByVal destPath As String, _
-                ByVal callback As IDownloadCallback)
-    m_taskId = taskId
+' Инициализация
+Public Sub Init(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String, _
+                ByVal callback As IDownloadCallback, ByVal bufferSize As Long, _
+                ByVal resolveTimeout As Long, ByVal connectTimeout As Long, _
+                ByVal sendTimeout As Long, ByVal receiveTimeout As Long)
+    m_taskId = TaskId
     m_url = url
     m_destPath = destPath
     Set m_callback = callback
+    m_bufferSize = bufferSize
+    m_resolveTimeout = resolveTimeout
+    m_connectTimeout = connectTimeout
+    m_sendTimeout = sendTimeout
+    m_receiveTimeout = receiveTimeout
     Set m_http = New WinHttp.WinHttpRequest
-    m_totalBytes = 0
-    m_receivedBytes = 0
+    m_totalBytes = 0@
+    m_receivedBytes = 0@
     m_startTime = Timer
     m_lastReportedPercent = -1
     m_chunkCounter = 0
-
+    m_isCompleted = False
+    m_expectedSize = 0@
     
-    ' Создаём защитный колбэк, который вызовет макрос даже при сбросе VBA
+    ' Защита от потери состояния
     Set m_lossCallback = New StateLossCallback
     m_lossCallback.InitByMacroName "OnWorkerLostState", m_taskId, m_url, m_destPath
 End Sub
 
-' Устанавливает ссылку на менеджер (для уведомлений о завершении)
 Public Sub SetManager(ByVal manager As CAsyncDownloadManager)
     Set m_manager = manager
 End Sub
 
-' Запуск асинхронной загрузки
+Public Property Get TaskId() As Long
+    TaskId = m_taskId
+End Property
+
+' Запуск загрузки
 Public Sub Start()
-    ' Создаём бинарный поток для сохранения данных
-    Set m_stream = CreateObject("ADODB.Stream")
-    m_stream.Type = 1   ' adTypeBinary
-    m_stream.Open
+    ' Установка таймаутов
+    m_http.SetTimeouts m_resolveTimeout, m_connectTimeout, m_sendTimeout, m_receiveTimeout
+    ' Инициализация буферизированной записи
+    Set m_fileWriter = New CFileWriter
+    If Not m_fileWriter.Init(m_destPath, m_bufferSize) Then
+        FailWithError "Не удалось создать файл: " & m_destPath
+        Exit Sub
+    End If
     
-    ' Асинхронный GET-запрос
     m_http.Open "GET", m_url, True
     m_http.Send
     
-    ' Уведомляем callback о начале загрузки
     If Not m_callback Is Nothing Then
         m_callback.OnStart m_taskId, m_url, m_destPath
     End If
@@ -84,133 +105,129 @@ Public Sub Cancel()
         m_http.abort
         On Error GoTo 0
     End If
-    If Not m_lossCallback Is Nothing Then
-        m_lossCallback.Cancel
-    End If
+    If Not m_lossCallback Is Nothing Then m_lossCallback.Cancel
+    If Not m_fileWriter Is Nothing Then m_fileWriter.CloseFile
+    m_isCompleted = True
 End Sub
 
-' Освобождение ресурсов
-Private Sub Terminate()
-    If Not m_stream Is Nothing Then
-        On Error Resume Next
-        m_stream.Close
-        Set m_stream = Nothing
-        On Error GoTo 0
+' Принудительное успешное завершение (используется при проверке уже существующего файла)
+Public Function CheckAndCompleteIfFileExists() As Boolean
+    If m_isCompleted Then Exit Function
+    If m_expectedSize = 0@ Then Exit Function   ' Неизвестен ожидаемый размер – не проверяем
+    
+    Dim actualSize As Currency
+    actualSize = GetFileSizeByPath(m_destPath)
+    If actualSize > 0@ And actualSize = m_expectedSize Then
+        ' Файл уже полностью скачан – завершаем задачу успешно
+        m_isCompleted = True
+        If Not m_callback Is Nothing Then
+            m_callback.OnComplete m_taskId, m_url, m_destPath, True, ""
+        End If
+        If Not m_manager Is Nothing Then
+            m_manager.OnWorkerComplete m_taskId, True
+        End If
+        RaiseEvent WorkerComplete(m_taskId, True)
+        CheckAndCompleteIfFileExists = True
+    Else
+        CheckAndCompleteIfFileExists = False
     End If
-    If Not m_lossCallback Is Nothing Then
-        On Error Resume Next
-        m_lossCallback.Cancel
-        On Error GoTo 0
+End Function
+
+' Вспомогательная функция при ошибке
+Private Sub FailWithError(ByVal errorMsg As String)
+    m_isCompleted = True
+    If Not m_callback Is Nothing Then
+        m_callback.OnComplete m_taskId, m_url, m_destPath, False, errorMsg
     End If
+    If Not m_manager Is Nothing Then
+        m_manager.OnWorkerComplete m_taskId, False
+    End If
+    RaiseEvent WorkerComplete(m_taskId, False)
+    If Not m_fileWriter Is Nothing Then m_fileWriter.CloseFile
 End Sub
 
-' Безопасное получение Content-Length (без переполнения)
+' Получение Content-Length (безопасно)
 Private Function GetContentLength() As Currency
     Dim headerValue As String
     headerValue = m_http.GetResponseHeader("Content-Length")
-    
     If headerValue = "" Then
         GetContentLength = 0@
         Exit Function
     End If
-    
-    ' Используем CDec для преобразования больших чисел
     On Error Resume Next
     GetContentLength = CDec(headerValue)
-    If Err.Number <> 0 Then
-        GetContentLength = 0@
-        Err.Clear
-    End If
+    If Err.Number <> 0 Then GetContentLength = 0@
     On Error GoTo 0
 End Function
 
-' Событие: получена порция данных
+' Событие: получены данные
 Private Sub m_http_OnResponseDataAvailable(Data() As Byte)
-    ' Записываем данные в поток
-    m_stream.Write Data
+    If m_isCompleted Then Exit Sub
+    m_fileWriter.WriteBytes Data
     m_receivedBytes = m_receivedBytes + (UBound(Data) - LBound(Data) + 1)
     
-    ' Пытаемся получить общий размер из заголовка Content-Length (если ещё не знаем)
-    If m_totalBytes = 0 Then
+    If m_totalBytes = 0@ Then
         m_totalBytes = GetContentLength
+        m_expectedSize = m_totalBytes
     End If
     
-     ' Вычисляем процент (безопасно, используя Currency)
     Dim percent As Integer
     If m_totalBytes > 0@ Then
-        ' Используем CDec для промежуточных вычислений
-        Dim ratio As Variant
-        ratio = CDec(m_receivedBytes) / CDec(m_totalBytes)
-        percent = CInt(ratio * 100)
+        percent = CInt(CDec(m_receivedBytes) / CDec(m_totalBytes) * 100)
         If percent > 100 Then percent = 100
     Else
         percent = -1
     End If
     
-    ' БЕЗОПАСНОЕ ОБНОВЛЕНИЕ СЧЁТЧИКА (циклический сброс)
-    If m_chunkCounter >= MAX_LONG Then
-        m_chunkCounter = 0
-    Else
-        m_chunkCounter = m_chunkCounter + 1
-    End If
-    
-    ' Уведомляем callback о прогрессе
+    ' Уведомление о прогрессе с адаптивной частотой
     If Not m_callback Is Nothing Then
-        ' Для маленьких файлов обновляем чаще, для больших - реже
-        Dim updateThreshold As Integer
-        If m_totalBytes < 1 * MB Then  ' Менее 1MB
-            updateThreshold = 100   ' каждые 100 фрагментов
-        ElseIf m_totalBytes < 10 * MB Then  ' Менее 100MB
-            updateThreshold = 300  ' каждые 300 фрагментов
+        Dim threshold As Long
+        If m_totalBytes > 0 Then
+            If m_totalBytes < 1 * MB Then          ' менее 1 МБ
+                threshold = 100
+            ElseIf m_totalBytes < 10 * MB Then     ' от 1 до 10 МБ
+                threshold = 300
+            Else
+                threshold = 800                    ' более 10 МБ
+            End If
         Else
-            updateThreshold = 800  ' каждые 800 фрагментов
+            threshold = 200   ' если неизвестный размер
         End If
-        
-        If m_chunkCounter Mod updateThreshold = 0 Then
+        m_chunkCounter = m_chunkCounter + 1
+        If m_chunkCounter Mod threshold = 0 Then
             m_callback.OnProgress m_taskId, m_receivedBytes, m_totalBytes, percent
         End If
     End If
 End Sub
 
-' Событие: загрузка завершена (все данные получены)
+' Событие: загрузка завершена
 Private Sub m_http_OnResponseFinished()
+    If m_isCompleted Then Exit Sub
+    m_isCompleted = True
+    ' Закрываем файл и сбрасываем буфер
+    m_fileWriter.CloseFile
+    
     Dim success As Boolean
     Dim errorMsg As String
-    Dim fso As Object
     
-    ' Проверяем HTTP статус
     If m_http.status = 200 Then
-        On Error Resume Next
-        ' Создаём папку назначения, если её нет
-        Set fso = CreateObject("Scripting.FileSystemObject")
-        Dim folder As String
-        folder = fso.GetParentFolderName(m_destPath)
-        If folder <> "" And Not fso.FolderExists(folder) Then
-            fso.CreateFolder folder
-        End If
-        ' Сохраняем поток в файл
-        m_stream.SaveToFile m_destPath, 2   ' adSaveCreateOverWrite
-        If Err.Number = 0 Then
-            success = True
-        Else
+        ' Проверяем размер файла
+        Dim actualSize As Currency
+        actualSize = m_fileWriter.GetFileSize
+        If m_expectedSize > 0@ And actualSize <> m_expectedSize Then
             success = False
-            errorMsg = "Ошибка сохранения файла: " & Err.Description
+            errorMsg = "Несоответствие размера: ожидалось " & Format(m_expectedSize, "#,##0") & " байт, получено " & Format(actualSize, "#,##0")
+        Else
+            success = True
         End If
-        On Error GoTo 0
     Else
         success = False
         errorMsg = "HTTP " & m_http.status & " " & m_http.StatusText
     End If
     
-    ' Освобождаем ресурсы
-    Terminate
-    
-    ' Уведомляем callback о завершении
     If Not m_callback Is Nothing Then
         m_callback.OnComplete m_taskId, m_url, m_destPath, success, errorMsg
     End If
-    
-    ' Уведомляем менеджера, чтобы запустить следующую задачу
     If Not m_manager Is Nothing Then
         m_manager.OnWorkerComplete m_taskId, success
     End If
@@ -219,7 +236,9 @@ End Sub
 
 ' Событие: ошибка WinHTTP
 Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As String)
-    Terminate
+    If m_isCompleted Then Exit Sub
+    m_isCompleted = True
+    m_fileWriter.CloseFile
     Dim errorMsg As String
     errorMsg = "WinHTTP ошибка " & ErrorNumber & ": " & ErrorDescription
     If Not m_callback Is Nothing Then
@@ -231,9 +250,9 @@ Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As 
     RaiseEvent WorkerComplete(m_taskId, False)
 End Sub
 
-' Деструктор класса
+' Деструктор
 Private Sub Class_Terminate()
-    Terminate
+    If Not m_fileWriter Is Nothing Then m_fileWriter.CloseFile
+    If Not m_lossCallback Is Nothing Then m_lossCallback.Cancel
 End Sub
-
 
