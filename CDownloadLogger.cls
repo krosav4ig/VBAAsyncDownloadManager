@@ -8,251 +8,360 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
-' Модуль: CDownloadLogger.cls
-' Назначение: Реализация IDownloadCallback – логирование в Excel и текстовый файл.
-'             Обрабатывает события от воркеров и обновляет таблицу логов.
+' Класс: CDownloadLogger
+' Назначение: Логирование загрузок в Excel и файл с уровнями детализации
 ' ============================================================================
 Option Explicit
 Implements IDownloadCallback
 
+Private Const LOG_BUFFER_SIZE As Long = 100  ' Буфер для текстового лога
+
+' Колонки таблицы
+Private Enum LogCol
+    colTaskId = 1
+    colUrl = 2
+    colDest = 3
+    colStatus = 4
+    colProgress = 5
+    colStartTime = 6
+    colEndTime = 7
+    colError = 8
+    colRetryCount = 9
+    colDownloadedBytes = 10
+End Enum
+
 Private m_logSheet As Worksheet
-Private m_nextRow As Long
-Private m_backupLogPath As String
-Private m_taskRowMap As Object    ' Dictionary для быстрого поиска строк по TaskID
+Private m_logFileHandle As Integer
+Private m_logFilePath As String
+Private m_logLevel As Long
+Private m_taskRowMap As Object
+Private m_logBuffer As Collection
+Private m_isFileOpen As Boolean
+Private m_criticalErrors As Collection
 
-' Константы для индексов колонок (для читаемости)
-Private Const COL_TASKID As Long = 1
-Private Const COL_URL As Long = 2
-Private Const COL_DEST As Long = 3
-Private Const COL_STATUS As Long = 4
-Private Const COL_PROGRESS As Long = 5
-Private Const COL_START_TIME As Long = 6
-Private Const COL_END_TIME As Long = 7
-Private Const COL_ERROR As Long = 8
+' Синхронизация
+Private m_syncLock As Object
 
-' Инициализация логгера
-Public Sub Init(ByVal logSheet As Worksheet, Optional ByVal backupLogPath As String = "")
+' ============================================================================
+' Инициализация
+' ============================================================================
+Public Sub Init(ByVal logSheet As Worksheet, Optional ByVal logFilePath As String = "", _
+                Optional ByVal logLevel As Long = LL_INFO)
+    On Error GoTo ErrorHandler
+    
     Set m_logSheet = logSheet
-    m_backupLogPath = backupLogPath
-    m_nextRow = 2
-
-    ' Создаём словарь для быстрого доступа к строкам (безопаснее чем Find)
+    m_logFilePath = logFilePath
+    m_logLevel = logLevel
     Set m_taskRowMap = CreateObject("Scripting.Dictionary")
-
-    ' Заголовки таблицы
-    With m_logSheet
-        .Cells(1, COL_TASKID).Value = "TaskID"
-        .Cells(1, COL_URL).Value = "URL"
-        .Cells(1, COL_DEST).Value = "Destination"
-        .Cells(1, COL_STATUS).Value = "Status"
-        .Cells(1, COL_PROGRESS).Value = "Progress %"
-        .Cells(1, COL_START_TIME).Value = "Start Time"
-        .Cells(1, COL_END_TIME).Value = "End Time"
-        .Cells(1, COL_ERROR).Value = "Error"
-        .Columns("A:H").AutoFit
-    End With
+    Set m_logBuffer = New Collection
+    Set m_criticalErrors = New Collection
+    Set m_syncLock = CreateObject("Scripting.Dictionary")
+    m_syncLock.Add "lock", 1
+    
+    ' Инициализация таблицы
+    If Not logSheet Is Nothing Then
+        InitLogSheet
+    End If
+    
+    ' Открытие файла лога
+    If m_logFilePath <> "" Then
+        OpenLogFile
+    End If
+    
+    LogMessage LL_INFO, 0, "Логгер инициализирован. Уровень логирования: " & CStr(m_logLevel)
+    Exit Sub
+    
+ErrorHandler:
+    Debug.Print "CRITICAL: Ошибка инициализации логгера: " & Err.Description
 End Sub
 
-' Начало загрузки
-Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String)
-    ' Добавляем новую строку в таблицу
-    Dim newRow As Long
-    newRow = m_nextRow
-
-    Dim rowData As Variant
-    rowData = Array(TaskId, url, destPath, "Downloading", 0, Now, Empty, Empty)
-
+' ============================================================================
+Private Sub InitLogSheet()
     On Error Resume Next
-    m_logSheet.Cells(newRow, COL_TASKID).Resize(1, 8).Value = rowData
+    With m_logSheet
+        .Cells(1, LogCol.colTaskId).Value = "TaskID"
+        .Cells(1, LogCol.colUrl).Value = "URL"
+        .Cells(1, LogCol.colDest).Value = "Destination"
+        .Cells(1, LogCol.colStatus).Value = "Status"
+        .Cells(1, LogCol.colProgress).Value = "Progress %"
+        .Cells(1, LogCol.colStartTime).Value = "Start Time"
+        .Cells(1, LogCol.colEndTime).Value = "End Time"
+        .Cells(1, LogCol.colError).Value = "Error"
+        .Cells(1, LogCol.colRetryCount).Value = "Retries"
+        .Cells(1, LogCol.colDownloadedBytes).Value = "Downloaded MB"
+        
+        .Rows(1).Font.Bold = True
+        .Columns("A:J").AutoFit
+    End With
     On Error GoTo 0
+End Sub
 
-    ' Сохраняем соответствие TaskID -> номер строки
-    m_taskRowMap.Add CStr(TaskId), newRow
-    m_nextRow = newRow + 1
+' ============================================================================
+Private Sub OpenLogFile()
+    On Error GoTo ErrorHandler
+    m_logFileHandle = FreeFile
+    Open m_logFilePath For Append As #m_logFileHandle
+    m_isFileOpen = True
+    Exit Sub
+    
+ErrorHandler:
+    m_isFileOpen = False
+    Debug.Print "ERROR: Не удалось открыть файл лога: " & m_logFilePath
+End Sub
 
-    ' Резервное логирование в текстовый файл
-    If m_backupLogPath <> "" Then
+' ============================================================================
+Public Sub LogMessage(ByVal level As Long, ByVal TaskId As Long, _
+                      ByVal message As String, Optional ByVal errorCode As Long = 0)
+    On Error GoTo SafeExit
+    
+    If level > m_logLevel Then Exit Sub
+    
+    Dim timestamp As String
+    timestamp = Format(Now, "yyyy-mm-dd HH:MM:SS")
+    Dim prefix As String
+    
+    Select Case level
+        Case LL_CRITICAL: prefix = "[CRITICAL]"
+        Case LL_ERROR: prefix = "[ERROR]"
+        Case LL_WARNING: prefix = "[WARN]"
+        Case LL_INFO: prefix = "[INFO]"
+        Case LL_DEBUG: prefix = "[DEBUG]"
+    End Select
+    
+    Dim taskStr As String
+    If TaskId > 0 Then taskStr = "T" & CStr(TaskId) Else taskStr = "SYS"
+    
+    Dim logMsg As String
+    logMsg = timestamp & " " & prefix & " " & taskStr & ": " & message
+    If errorCode <> 0 Then logMsg = logMsg & " (Err: " & errorCode & ")"
+    
+    ' Вывод в Immediate окно
+    Debug.Print logMsg
+    
+    ' Запись в файл (буферизованная)
+    If m_isFileOpen Then
         On Error Resume Next
-        Open m_backupLogPath For Append As #1
-        Print #1, Now & " | Задача " & TaskId & " | НАЧАЛО | " & url & " -> " & destPath
-        Close #1
+        Print #m_logFileHandle, logMsg
+        If level = LL_CRITICAL Then
+            FlushLogFile
+        End If
+        On Error GoTo 0
+    End If
+    
+    ' Критические ошибки сохраняем отдельно
+    If level = LL_CRITICAL Then
+        On Error Resume Next
+        m_criticalErrors.Add logMsg
+        On Error GoTo 0
+    End If
+    
+SafeExit:
+End Sub
+
+' ============================================================================
+Public Sub FlushLogFile()
+    If m_isFileOpen Then
+        On Error Resume Next
+        Dim tempNum As Integer
+        tempNum = FreeFile
+        Close #m_logFileHandle
+        Open m_logFilePath For Append As #m_logFileHandle
         On Error GoTo 0
     End If
 End Sub
 
-' Прогресс загрузки (БЕЗОПАСНАЯ ВЕРСИЯ)
-Private Sub IDownloadCallback_OnProgress(ByVal TaskId As Long, ByVal bytesReceived As Currency, _
-                                          ByVal totalBytes As Currency, ByVal percent As Integer)
-    On Error GoTo ErrorHandler
-
-    ' Находим строку через кэш или поиск
-    Dim rowNumber As Variant
-    rowNumber = FindTaskRow(TaskId)
-
-    If Not IsNull(rowNumber) And IsNumeric(rowNumber) Then
-        ' Обновляем только ячейку прогресса
-        m_logSheet.Cells(CLng(rowNumber), COL_PROGRESS).Value = percent
+' ============================================================================
+Public Sub CloseLogFile()
+    If m_isFileOpen Then
+        On Error Resume Next
+        FlushLogFile
+        Close #m_logFileHandle
+        On Error GoTo 0
+        m_isFileOpen = False
     End If
-
-    Debug.Print "Задача " & TaskId & ": " & percent & "% (" & bytesReceived & "/" & totalBytes & ")"
-
-    Exit Sub
-
-ErrorHandler:
-    Debug.Print "Ошибка в OnProgress для задачи " & TaskId & ": " & Err.Description
 End Sub
 
-' Завершение загрузки (БЕЗОПАСНАЯ ВЕРСИЯ)
+' ============================================================================
+Private Function GetTaskRow(ByVal TaskId As Long) As Variant
+    Dim key As String
+    key = CStr(TaskId)
+    
+    If m_taskRowMap.Exists(key) Then
+        GetTaskRow = m_taskRowMap(key)
+        Exit Function
+    End If
+    
+    ' Поиск в таблице
+    On Error Resume Next
+    Dim cell As Range
+    Set cell = m_logSheet.Columns(LogCol.colTaskId).Find(What:=TaskId, LookAt:=xlWhole)
+    If Not cell Is Nothing Then
+        m_taskRowMap.Add key, cell.row
+        GetTaskRow = cell.row
+    Else
+        GetTaskRow = Null
+    End If
+    On Error GoTo 0
+End Function
+
+' ============================================================================
+' Реализация IDownloadCallback
+' ============================================================================
+Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String)
+    On Error GoTo ErrorHandler
+    
+    LogMessage LL_INFO, TaskId, "Начало загрузки: " & url
+    
+    If m_logSheet Is Nothing Then Exit Sub
+    
+    Dim newRow As Long
+    newRow = m_logSheet.Cells(m_logSheet.Rows.count, LogCol.colTaskId).End(xlUp).row + 1
+    If newRow < 2 Then newRow = 2
+    
+    With m_logSheet
+        .Cells(newRow, LogCol.colTaskId).Value = TaskId
+        .Cells(newRow, LogCol.colUrl).Value = url
+        .Cells(newRow, LogCol.colDest).Value = destPath
+        .Cells(newRow, LogCol.colStatus).Value = "Загрузка..."
+        .Cells(newRow, LogCol.colProgress).Value = 0
+        .Cells(newRow, LogCol.colStartTime).Value = Now
+        .Cells(newRow, LogCol.colRetryCount).Value = 0
+    End With
+    
+    m_taskRowMap.Add CStr(TaskId), newRow
+    Exit Sub
+    
+ErrorHandler:
+    LogMessage LL_ERROR, TaskId, "Ошибка OnStart: " & Err.Description, Err.Number
+End Sub
+
+' ============================================================================
+Private Sub IDownloadCallback_OnProgress(ByVal TaskId As Long, ByVal bytesReceived As Currency, _
+                                          ByVal totalBytes As Currency, ByVal percent As Integer)
+    If percent < 0 Or percent > 100 Then Exit Sub
+    
+    ' Обновляем Excel только при изменении процента (оптимизация)
+    Static lastPercent As Integer
+    
+    If percent Mod 5 = 0 Or percent = 100 Then
+        Dim rowNumber As Variant
+        rowNumber = GetTaskRow(TaskId)
+        
+        If Not IsNull(rowNumber) And IsNumeric(rowNumber) Then
+            On Error Resume Next
+            m_logSheet.Cells(CLng(rowNumber), LogCol.colProgress).Value = percent
+            If totalBytes > 0 Then
+                m_logSheet.Cells(CLng(rowNumber), LogCol.colDownloadedBytes).Value = _
+                    Round(CDbl(bytesReceived) / 1048576, 2)
+            End If
+            On Error GoTo 0
+        End If
+        
+        lastPercent = percent
+    End If
+    
+    ' Логирование прогресса только на DEBUG уровне
+    If m_logLevel >= LL_DEBUG Then
+        LogMessage LL_DEBUG, TaskId, "Прогресс: " & percent & "%"
+    End If
+End Sub
+
+' ============================================================================
 Private Sub IDownloadCallback_OnComplete(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String, _
                                           ByVal success As Boolean, ByVal errorMsg As String)
     On Error GoTo ErrorHandler
-
+    
     Dim status As String
-    status = IIf(success, "Completed", "Error")
-
-    Dim rowNumber As Variant
-    rowNumber = FindTaskRow(TaskId)
-
-    If Not IsNull(rowNumber) And IsNumeric(rowNumber) Then
-        Dim row As Long
-        row = CLng(rowNumber)
-
-        ' Обновляем существующую строку
-        m_logSheet.Cells(row, COL_STATUS).Value = status
-        m_logSheet.Cells(row, COL_PROGRESS).Value = IIf(success, 100, m_logSheet.Cells(row, COL_PROGRESS).Value)
-        m_logSheet.Cells(row, COL_END_TIME).Value = Now
-        If Not success Then
-            m_logSheet.Cells(row, COL_ERROR).Value = errorMsg
-        End If
+    Dim logLevel As Long
+    
+    If success Then
+        status = "Завершено"
+        logLevel = LL_INFO
+        LogMessage logLevel, TaskId, "Загрузка успешно завершена: " & destPath
     Else
-        ' Аварийный случай - создаём новую строку
-        Dim newRow As Long
-        newRow = m_nextRow
-
-        Dim rowData As Variant
-        rowData = Array(TaskId, url, destPath, status, IIf(success, 100, 0), Now, Now, IIf(Not success, errorMsg, Empty))
-
-        On Error Resume Next
-        m_logSheet.Cells(newRow, COL_TASKID).Resize(1, 8).Value = rowData
-        On Error GoTo 0
-
-        m_taskRowMap.Add CStr(TaskId), newRow
-        m_nextRow = newRow + 1
+        status = "Ошибка"
+        logLevel = LL_ERROR
+        LogMessage logLevel, TaskId, "Ошибка загрузки: " & errorMsg
     End If
-
-    ' Резервное логирование
-    If m_backupLogPath <> "" Then
-        On Error Resume Next
-        Open m_backupLogPath For Append As #1
-        Print #1, Now & " | Задача " & TaskId & " | " & status & " | " & url
-        If Not success Then Print #1, "Ошибка: " & errorMsg
-        Close #1
-        On Error GoTo 0
-    End If
-
-    Exit Sub
-
-ErrorHandler:
-    Debug.Print "Ошибка в OnComplete для задачи " & TaskId & ": " & Err.Description
-End Sub
-
-' Метод для принудительного обновления лога (если событие пришло извне)
-Public Sub ForceComplete(ByVal TaskId As Long, ByVal success As Boolean, Optional ByVal errorMsg As String = "")
+    
+    If m_logSheet Is Nothing Then GoTo SkipExcel
+    
     Dim rowNumber As Variant
-    rowNumber = FindTaskRow(TaskId)
+    rowNumber = GetTaskRow(TaskId)
+    
     If Not IsNull(rowNumber) And IsNumeric(rowNumber) Then
         Dim row As Long: row = CLng(rowNumber)
-        m_logSheet.Cells(row, COL_STATUS).Value = IIf(success, "Completed", "Error")
-        m_logSheet.Cells(row, COL_PROGRESS).Value = IIf(success, 100, m_logSheet.Cells(row, COL_PROGRESS).Value)
-        m_logSheet.Cells(row, COL_END_TIME).Value = Now
-        If Not success Then m_logSheet.Cells(row, COL_ERROR).Value = errorMsg
+        
+        On Error Resume Next
+        m_logSheet.Cells(row, LogCol.colStatus).Value = status
+        If success Then
+            m_logSheet.Cells(row, LogCol.colProgress).Value = 100
+        End If
+        m_logSheet.Cells(row, LogCol.colEndTime).Value = Now
+        If Not success And errorMsg <> "" Then
+            m_logSheet.Cells(row, LogCol.colError).Value = Left(errorMsg, 500)
+        End If
+        On Error GoTo 0
+    End If
+    
+SkipExcel:
+    Exit Sub
+    
+ErrorHandler:
+    LogMessage LL_CRITICAL, TaskId, "Критическая ошибка в OnComplete: " & Err.Description, Err.Number
+End Sub
+
+' ============================================================================
+Private Sub IDownloadCallback_OnLog(ByVal level As Long, ByVal TaskId As Long, _
+                                     ByVal message As String, Optional ByVal errorCode As Long = 0)
+    LogMessage level, TaskId, message, errorCode
+End Sub
+
+' ============================================================================
+Public Sub UpdateRetryCount(ByVal TaskId As Long, ByVal retryCount As Integer)
+    Dim rowNumber As Variant
+    rowNumber = GetTaskRow(TaskId)
+    
+    If Not IsNull(rowNumber) And IsNumeric(rowNumber) Then
+        On Error Resume Next
+        m_logSheet.Cells(CLng(rowNumber), LogCol.colRetryCount).Value = retryCount
+        On Error GoTo 0
     End If
 End Sub
 
-' Вспомогательная функция для безопасного поиска строки
-Private Function FindTaskRow(ByVal TaskId As Long) As Variant
-    Dim taskKey As String
-    taskKey = CStr(TaskId)
-
-    ' 1. Проверяем словарь
-    If m_taskRowMap.Exists(taskKey) Then
-        FindTaskRow = m_taskRowMap(taskKey)
-        Exit Function
-    End If
-
-    ' 2. Если нет в словаре - ищем через Find
-    On Error GoTo ErrorHandler
-
-    Dim searchRange As Range
-    Set searchRange = m_logSheet.Range("A:A")
-
-    Dim foundCell As Range
-    Set foundCell = searchRange.Find( _
-        What:=taskKey, _
-        After:=m_logSheet.Cells(1, 1), _
-        LookIn:=xlValues, _
-        LookAt:=xlWhole, _
-        SearchOrder:=xlByRows, _
-        SearchDirection:=xlNext, _
-        MatchCase:=False, _
-        SearchFormat:=False)
-
-    If Not foundCell Is Nothing Then
-        m_taskRowMap.Add taskKey, foundCell.row
-        FindTaskRow = foundCell.row
-    Else
-        FindTaskRow = Null
-    End If
-
-    Exit Function
-
-ErrorHandler:
-    Debug.Print "Ошибка поиска задачи " & TaskId & ": " & Err.Description
-    FindTaskRow = Null
+' ============================================================================
+Public Function GetCriticalErrors() As Collection
+    Set GetCriticalErrors = m_criticalErrors
 End Function
 
-' Перезагрузка словаря из существующих данных
+' ============================================================================
 Public Sub ReloadDictionary()
     On Error Resume Next
-
-    If m_taskRowMap Is Nothing Then
-        Set m_taskRowMap = CreateObject("Scripting.Dictionary")
-    Else
-        m_taskRowMap.RemoveAll
-    End If
-
+    m_taskRowMap.RemoveAll
+    
+    If m_logSheet Is Nothing Then Exit Sub
+    
     Dim lastRow As Long
-    lastRow = m_logSheet.Cells(m_logSheet.Rows.Count, 1).End(xlUp).row
-
+    lastRow = m_logSheet.Cells(m_logSheet.Rows.count, LogCol.colTaskId).End(xlUp).row
+    
     Dim i As Long
     For i = 2 To lastRow
         Dim taskIdValue As Variant
-        taskIdValue = m_logSheet.Cells(i, 1).Value
-
+        taskIdValue = m_logSheet.Cells(i, LogCol.colTaskId).Value
         If IsNumeric(taskIdValue) Then
-            Dim TaskId As Long
-            TaskId = CLng(taskIdValue)
-            Dim taskKey As String
-            taskKey = CStr(TaskId)
-
-            If Not m_taskRowMap.Exists(taskKey) Then
-                m_taskRowMap.Add taskKey, i
-            End If
+            m_taskRowMap.Add CStr(CLng(taskIdValue)), i
         End If
     Next i
-
-    m_nextRow = lastRow + 1
     On Error GoTo 0
 End Sub
 
-' Очистка ресурсов
+' ============================================================================
 Private Sub Class_Terminate()
-    If Not m_taskRowMap Is Nothing Then
-        On Error Resume Next
-        m_taskRowMap.RemoveAll
-        Set m_taskRowMap = Nothing
-        On Error GoTo 0
-    End If
-    Set m_logSheet = Nothing
+    CloseLogFile
+    Set m_taskRowMap = Nothing
+    Set m_logBuffer = Nothing
+    Set m_criticalErrors = Nothing
+    Set m_syncLock = Nothing
 End Sub
+
 

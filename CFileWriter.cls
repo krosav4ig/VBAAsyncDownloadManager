@@ -8,11 +8,12 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
-' Класс: CFileWriter.cls
-' Назначение: Буферизированная запись байтов в файл с задаваемым размером буфера.
-'             Использует WinAPI для высокой производительности и поддержки больших файлов (>2GB).
+' Класс: CFileWriter
+' Назначение: Буферизированная запись в файл с поддержкой больших файлов
 ' ============================================================================
 Option Explicit
+
+Private Const MAX_BUFFER_SIZE As Long = 1048576  ' 1MB максимум
 
 Private m_hFile As LongPtr
 Private m_buffer() As Byte
@@ -20,56 +21,73 @@ Private m_bufferSize As Long
 Private m_bufferPos As Long
 Private m_isOpen As Boolean
 Private m_filePath As String
+Private m_writeErrorCount As Long
+Private m_totalBytesWritten As Currency
 
-#If Mac Then
-    #If VBA7 Then
-        Private Declare PtrSafe Function CopyMemory Lib "/usr/lib/libc.dylib" Alias "memmove" (Destination As Any, Source As Any, ByVal Length As LongPtr) As LongPtr
-    #Else
-        Private Declare Function CopyMemory Lib "/usr/lib/libc.dylib" Alias "memmove" (Destination As Any, Source As Any, ByVal Length As Long) As Long
-    #End If
-#Else 'Windows
-    #If VBA7 Then
-        Private Declare PtrSafe Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As LongPtr)
-    #Else
-        Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
-    #End If
+#If VBA7 Then
+    Private Declare PtrSafe Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" ( _
+        Destination As Any, Source As Any, ByVal Length As LongPtr)
+#Else
+    Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" ( _
+        Destination As Any, Source As Any, ByVal Length As Long)
 #End If
 
-#If VBA7 = 0 Then
-    Private Enum LongPtr
-        [_]
-    End Enum
-#End If
-
-' Инициализация: создаёт/перезаписывает файл, выделяет буфер
-' Если файл уже существует (при рестарте), он открывается для дозаписи
-Public Function Init(ByVal destPath As String, ByVal bufferSize As Long, Optional ByVal appendMode As Boolean = False) As Boolean
+' ============================================================================
+' Инициализация
+' ============================================================================
+Public Function Init(ByVal destPath As String, ByVal bufferSize As Long, _
+                     Optional ByVal appendMode As Boolean = False) As Boolean
+    On Error GoTo ErrorHandler
+    
     If m_isOpen Then CloseFile
     
-    ' Если режим дозаписи (append), мы не очищаем файл, а открываем существующий
-    ' Логика создания/открытия вынесена в modFileAPI (OpenFileForWrite)
-    m_hFile = OpenFileForWrite(destPath, appendMode)
+    ' Ограничение размера буфера
+    If bufferSize < 4096 Then bufferSize = 4096
+    If bufferSize > MAX_BUFFER_SIZE Then bufferSize = MAX_BUFFER_SIZE
     
-    If m_hFile = 0 Or m_hFile = -1 Then
+    m_bufferSize = bufferSize
+    m_filePath = destPath
+    m_writeErrorCount = 0
+    m_totalBytesWritten = 0@
+    
+    ' Создание директории при необходимости
+    If Not CreateDirectoryRecursive(GetParentPath(destPath)) Then
         Init = False
         Exit Function
     End If
     
-    ReDim m_buffer(0 To bufferSize - 1)
-    m_bufferSize = bufferSize
+    ' Открытие файла
+    m_hFile = OpenFileForWrite(destPath, appendMode)
+    
+    If m_hFile = 0 Then
+        Init = False
+        Exit Function
+    End If
+    
+    ' Выделение буфера
+    ReDim m_buffer(0 To m_bufferSize - 1)
     m_bufferPos = 0
-    m_filePath = destPath
     m_isOpen = True
     Init = True
+    Exit Function
+    
+ErrorHandler:
+    Init = False
 End Function
 
-' Добавление порции данных (буферизация)
-' Данные копируются во внутренний буфер и сбрасываются на диск при заполнении
+' ============================================================================
+' Запись данных
+' ============================================================================
 Public Sub WriteBytes(Data() As Byte)
     If Not m_isOpen Then Exit Sub
+    If m_writeErrorCount > 3 Then Exit Sub
+    
+    On Error GoTo ErrorHandler
     
     Dim dataLen As Long
     dataLen = UBound(Data) - LBound(Data) + 1
+    If dataLen <= 0 Then Exit Sub
+    
     Dim offset As Long: offset = 0
     
     Do While offset < dataLen
@@ -77,51 +95,125 @@ Public Sub WriteBytes(Data() As Byte)
         chunk = dataLen - offset
         If chunk > (m_bufferSize - m_bufferPos) Then chunk = m_bufferSize - m_bufferPos
         
-        ' Копирование памяти (быстрее побайтового цикла)
         CopyMemory m_buffer(m_bufferPos), Data(offset), chunk
         
         m_bufferPos = m_bufferPos + chunk
         offset = offset + chunk
+        m_totalBytesWritten = m_totalBytesWritten + chunk
         
-        If m_bufferPos = m_bufferSize Then Flush
+        If m_bufferPos >= m_bufferSize Then
+            If Not FlushInternal() Then
+                m_writeErrorCount = m_writeErrorCount + 1
+                Exit Sub
+            End If
+        End If
     Loop
+    
+    Exit Sub
+    
+ErrorHandler:
+    m_writeErrorCount = m_writeErrorCount + 1
 End Sub
 
-' Принудительная запись буфера на диск
-Public Sub Flush()
-    If Not m_isOpen Then Exit Sub
+' ============================================================================
+' Внутренний сброс буфера
+' ============================================================================
+Private Function FlushInternal() As Boolean
+    If Not m_isOpen Then
+        FlushInternal = False
+        Exit Function
+    End If
+    
     If m_bufferPos > 0 Then
         If Not WriteToFile(m_hFile, m_buffer, m_bufferPos) Then
-            Err.Raise 1001, "CFileWriter", "Ошибка записи в файл"
+            FlushInternal = False
+            Exit Function
         End If
         m_bufferPos = 0
     End If
+    
+    FlushInternal = True
+End Function
+
+' ============================================================================
+' Публичный сброс буфера
+' ============================================================================
+Public Sub Flush()
+    If Not m_isOpen Then Exit Sub
+    FlushInternal
 End Sub
 
-' Закрытие файла (вызывать после завершения всех данных)
+' ============================================================================
+' Закрытие файла
+' ============================================================================
 Public Sub CloseFile()
     If Not m_isOpen Then Exit Sub
-    Flush
+    
+    FlushInternal
     CloseFileHandle m_hFile
     m_isOpen = False
     m_hFile = 0
+    Erase m_buffer
 End Sub
 
-' Получение текущего размера файла (Currency)
-Public Function GetFileSize() As Currency
-    If Not m_isOpen Then
-        GetFileSize = GetFileSizeByPath(m_filePath)
+' ============================================================================
+' Получение текущего размера (файл + буфер)
+' ============================================================================
+Public Function GetCurrentSize() As Currency
+    If m_isOpen Then
+        GetCurrentSize = m_totalBytesWritten
     Else
-        Dim liSize As Currency
-        If GetFileSizeEx(m_hFile, liSize) <> 0 Then
-            GetFileSize = liSize * 10000
-        Else
-            GetFileSize = 0@
-        End If
+        GetCurrentSize = GetFileSizeByPath(m_filePath)
+        If GetCurrentSize < 0 Then GetCurrentSize = 0
     End If
 End Function
 
-' Деструктор
+' ============================================================================
+' Проверка целостности
+' ============================================================================
+Public Function IsHealthy() As Boolean
+    IsHealthy = (m_writeErrorCount <= 3)
+End Function
+
+' ============================================================================
+' Вспомогательные функции
+' ============================================================================
+Private Function GetParentPath(ByVal filePath As String) As String
+    Dim pos As Integer
+    pos = InStrRev(filePath, "\")
+    If pos > 0 Then
+        GetParentPath = Left(filePath, pos - 1)
+    Else
+        GetParentPath = ""
+    End If
+End Function
+
+Private Function CreateDirectoryRecursive(ByVal dirPath As String) As Boolean
+    If dirPath = "" Then
+        CreateDirectoryRecursive = True
+        Exit Function
+    End If
+    
+    On Error Resume Next
+    MkDir dirPath
+    If Err.Number = 75 Then ' Path already exists
+        Err.Clear
+        CreateDirectoryRecursive = True
+    ElseIf Err.Number = 76 Then ' Path not found - create parent
+        Err.Clear
+        CreateDirectoryRecursive = CreateDirectoryRecursive(GetParentPath(dirPath))
+        If CreateDirectoryRecursive Then
+            MkDir dirPath
+            CreateDirectoryRecursive = (Err.Number = 0)
+        End If
+    Else
+        CreateDirectoryRecursive = (Err.Number = 0)
+    End If
+    On Error GoTo 0
+End Function
+
+' ============================================================================
 Private Sub Class_Terminate()
-    If m_isOpen Then CloseFile
+    CloseFile
 End Sub
+
