@@ -9,35 +9,35 @@ Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 
 ' ============================================================================
-' Интерфейс: IDownloadCallback
-' Назначение: Колбэки для отслеживания загрузки
+' РРЅС‚РµСЂС„РµР№СЃ: IDownloadCallback
+' РќР°Р·РЅР°С‡РµРЅРёРµ: РљРѕР»Р±СЌРєРё РґР»СЏ РѕС‚СЃР»РµР¶РёРІР°РЅРёСЏ Р·Р°РіСЂСѓР·РєРё
 ' ============================================================================
 Option Explicit
 
-' Уровни логирования
+' РЈСЂРѕРІРЅРё Р»РѕРіРёСЂРѕРІР°РЅРёСЏ
 Public Enum logLevel
-    LL_CRITICAL = 1  ' Только критические ошибки
-    LL_ERROR = 2     ' Ошибки
-    LL_WARNING = 3   ' Предупреждения
-    LL_INFO = 4      ' Информационные сообщения
-    LL_DEBUG = 5     ' Детальная отладка
+    LL_CRITICAL = 1  ' РўРѕР»СЊРєРѕ РєСЂРёС‚РёС‡РµСЃРєРёРµ РѕС€РёР±РєРё
+    LL_ERROR = 2     ' РћС€РёР±РєРё
+    LL_WARNING = 3   ' РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ
+    LL_INFO = 4      ' РРЅС„РѕСЂРјР°С†РёРѕРЅРЅС‹Рµ СЃРѕРѕР±С‰РµРЅРёСЏ
+    LL_DEBUG = 5     ' Р”РµС‚Р°Р»СЊРЅР°СЏ РѕС‚Р»Р°РґРєР°
 End Enum
 
-' Начало загрузки
+' РќР°С‡Р°Р»Рѕ Р·Р°РіСЂСѓР·РєРё
 Public Sub OnStart(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String)
 End Sub
 
-' Прогресс загрузки
+' РџСЂРѕРіСЂРµСЃСЃ Р·Р°РіСЂСѓР·РєРё
 Public Sub OnProgress(ByVal TaskId As Long, ByVal bytesReceived As Currency, _
                       ByVal totalBytes As Currency, ByVal percent As Integer)
 End Sub
 
-' Завершение загрузки
+' Р—Р°РІРµСЂС€РµРЅРёРµ Р·Р°РіСЂСѓР·РєРё
 Public Sub OnComplete(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String, _
                       ByVal success As Boolean, ByVal errorMsg As String)
 End Sub
 
-' Логирование (общий метод)
+' Р›РѕРіРёСЂРѕРІР°РЅРёРµ (РѕР±С‰РёР№ РјРµС‚РѕРґ)
 Public Sub OnLog(ByVal level As logLevel, ByVal TaskId As Long, ByVal message As String, _
                  Optional ByVal errorCode As Long = 0)
 End Sub

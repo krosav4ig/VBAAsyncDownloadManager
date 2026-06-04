@@ -8,8 +8,8 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
-' Класс: CAsyncDownloadWorker
-' Назначение: Асинхронная загрузка одного файла с поддержкой докачки
+' РљР»Р°СЃСЃ: CAsyncDownloadWorker
+' РќР°Р·РЅР°С‡РµРЅРёРµ: РђСЃРёРЅС…СЂРѕРЅРЅР°СЏ Р·Р°РіСЂСѓР·РєР° РѕРґРЅРѕРіРѕ С„Р°Р№Р»Р° СЃ РїРѕРґРґРµСЂР¶РєРѕР№ РґРѕРєР°С‡РєРё
 ' ============================================================================
 Option Explicit
 
@@ -23,36 +23,36 @@ Private m_manager As CAsyncDownloadManager
 Private m_fileWriter As CFileWriter
 Private m_lossCallback As StateLossCallback
 
-' Статистика
+' РЎС‚Р°С‚РёСЃС‚РёРєР°
 Private m_totalBytes As Currency
 Private m_receivedBytes As Currency
 Private m_startOffset As Currency
 Private m_expectedSize As Currency
 
-' Таймауты
+' РўР°Р№РјР°СѓС‚С‹
 Private m_resolveTimeout As Long
 Private m_connectTimeout As Long
 Private m_sendTimeout As Long
 Private m_receiveTimeout As Long
 Private m_bufferSize As Long
 
-' Детекция зависаний
+' Р”РµС‚РµРєС†РёСЏ Р·Р°РІРёСЃР°РЅРёР№
 Private m_lastActivityTime As Double
 Private m_stuckCheckCount As Long
 Private m_maxRestarts As Integer
 Private m_restartCount As Integer
 
-' Флаги
+' Р¤Р»Р°РіРё
 Private m_isCompleted As Boolean
 Private m_isCancelled As Boolean
 Private m_isHeadChecked As Boolean
 
-' Константы
+' РљРѕРЅСЃС‚Р°РЅС‚С‹
 Private Const MIN_SPEED_BYTES_PER_SEC As Double = 1024
 Private Const STUCK_CHECK_INTERVAL_SEC As Double = 10
 Private Const MAX_STUCK_CHECKS As Long = 3
 
-' Константы уровней логирования
+' РљРѕРЅСЃС‚Р°РЅС‚С‹ СѓСЂРѕРІРЅРµР№ Р»РѕРіРёСЂРѕРІР°РЅРёСЏ
 Private Const LL_CRITICAL As Long = 1
 Private Const LL_ERROR As Long = 2
 Private Const LL_WARNING As Long = 3
@@ -62,7 +62,7 @@ Private Const LL_DEBUG As Long = 5
 Public Event WorkerComplete(ByVal TaskId As Long, ByVal success As Boolean)
 
 ' ============================================================================
-' Инициализация
+' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ
 ' ============================================================================
 Public Sub Init(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String, _
                 ByVal callback As IDownloadCallback, ByVal bufferSize As Long, _
@@ -104,7 +104,7 @@ Public Property Get IsActive() As Boolean
 End Property
 
 ' ============================================================================
-' Запуск загрузки
+' Р—Р°РїСѓСЃРє Р·Р°РіСЂСѓР·РєРё
 ' ============================================================================
 Public Sub Start()
     On Error GoTo ErrorHandler
@@ -116,41 +116,41 @@ Public Sub Start()
     m_receivedBytes = 0@
     m_expectedSize = 0@
     
-    ' Проверка существующего файла для докачки
+    ' РџСЂРѕРІРµСЂРєР° СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРіРѕ С„Р°Р№Р»Р° РґР»СЏ РґРѕРєР°С‡РєРё
     m_startOffset = GetFileSizeByPath(m_destPath)
     If m_startOffset > 0 Then
-        LogMessage LL_INFO, "Найден существующий файл размером " & Format(m_startOffset, "#,##0") & " байт"
+        LogMessage LL_INFO, "РќР°Р№РґРµРЅ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёР№ С„Р°Р№Р» СЂР°Р·РјРµСЂРѕРј " & Format(m_startOffset, "#,##0") & " Р±Р°Р№С‚"
     Else
         m_startOffset = 0@
     End If
     
-    ' HEAD запрос для получения размера файла на сервере (один раз)
+    ' HEAD Р·Р°РїСЂРѕСЃ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ СЂР°Р·РјРµСЂР° С„Р°Р№Р»Р° РЅР° СЃРµСЂРІРµСЂРµ (РѕРґРёРЅ СЂР°Р·)
     If Not m_isHeadChecked Then
         GetRemoteFileSize
         m_isHeadChecked = True
     End If
     
-    ' Проверка: файл уже полностью скачан?
+    ' РџСЂРѕРІРµСЂРєР°: С„Р°Р№Р» СѓР¶Рµ РїРѕР»РЅРѕСЃС‚СЊСЋ СЃРєР°С‡Р°РЅ?
     If CheckAndCompleteIfFileExists() Then
-        Exit Sub  ' Файл уже есть, завершаем
+        Exit Sub  ' Р¤Р°Р№Р» СѓР¶Рµ РµСЃС‚СЊ, Р·Р°РІРµСЂС€Р°РµРј
     End If
     
-    ' Запуск загрузки
+    ' Р—Р°РїСѓСЃРє Р·Р°РіСЂСѓР·РєРё
     StartDownload
     Exit Sub
     
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка запуска: " & Err.Description, Err.Number
-    FailWithError "Ошибка запуска: " & Err.Description
+    LogMessage LL_ERROR, "РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: " & Err.Description, Err.Number
+    FailWithError "РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: " & Err.Description
 End Sub
 
 ' ============================================================================
-' HEAD запрос для получения размера файла
+' HEAD Р·Р°РїСЂРѕСЃ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ СЂР°Р·РјРµСЂР° С„Р°Р№Р»Р°
 ' ============================================================================
 Private Sub GetRemoteFileSize()
     On Error GoTo ErrorHandler
     
-    LogMessage LL_DEBUG, "HEAD запрос для " & m_url
+    LogMessage LL_DEBUG, "HEAD Р·Р°РїСЂРѕСЃ РґР»СЏ " & m_url
     
     Dim headHttp As WinHttp.WinHttpRequest
     Set headHttp = New WinHttp.WinHttpRequest
@@ -169,27 +169,27 @@ Private Sub GetRemoteFileSize()
         
         If contentLength <> "" Then
             m_expectedSize = CDec(contentLength)
-            LogMessage LL_INFO, "Размер файла на сервере: " & Format(m_expectedSize, "#,##0") & " байт"
+            LogMessage LL_INFO, "Р Р°Р·РјРµСЂ С„Р°Р№Р»Р° РЅР° СЃРµСЂРІРµСЂРµ: " & Format(m_expectedSize, "#,##0") & " Р±Р°Р№С‚"
         Else
-            LogMessage LL_DEBUG, "HEAD запрос: Content-Length не получен"
+            LogMessage LL_DEBUG, "HEAD Р·Р°РїСЂРѕСЃ: Content-Length РЅРµ РїРѕР»СѓС‡РµРЅ"
         End If
     Else
-        LogMessage LL_DEBUG, "HEAD запрос вернул статус: " & headHttp.status
+        LogMessage LL_DEBUG, "HEAD Р·Р°РїСЂРѕСЃ РІРµСЂРЅСѓР» СЃС‚Р°С‚СѓСЃ: " & headHttp.status
     End If
     
     Exit Sub
     
 ErrorHandler:
-    LogMessage LL_DEBUG, "HEAD запрос не удался: " & Err.Description
+    LogMessage LL_DEBUG, "HEAD Р·Р°РїСЂРѕСЃ РЅРµ СѓРґР°Р»СЃСЏ: " & Err.Description
 End Sub
 
 ' ============================================================================
-' Основная загрузка
+' РћСЃРЅРѕРІРЅР°СЏ Р·Р°РіСЂСѓР·РєР°
 ' ============================================================================
 Private Sub StartDownload()
     On Error GoTo ErrorHandler
     
-    LogMessage LL_DEBUG, "Запуск загрузки" & IIf(m_startOffset > 0, " (докачка)", "")
+    LogMessage LL_DEBUG, "Р—Р°РїСѓСЃРє Р·Р°РіСЂСѓР·РєРё" & IIf(m_startOffset > 0, " (РґРѕРєР°С‡РєР°)", "")
     
     m_http.SetTimeouts m_resolveTimeout, m_connectTimeout, m_sendTimeout, m_receiveTimeout
     m_http.Open "GET", m_url, True
@@ -204,7 +204,7 @@ Private Sub StartDownload()
     
     Set m_fileWriter = New CFileWriter
     If Not m_fileWriter.Init(m_destPath, m_bufferSize, m_startOffset > 0) Then
-        FailWithError "Не удалось открыть файл: " & m_destPath
+        FailWithError "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р»: " & m_destPath
         Exit Sub
     End If
     
@@ -215,17 +215,17 @@ Private Sub StartDownload()
         m_callback.OnStart m_taskId, m_url, m_destPath
     End If
     
-    LogMessage LL_INFO, "Загрузка запущена"
+    LogMessage LL_INFO, "Р—Р°РіСЂСѓР·РєР° Р·Р°РїСѓС‰РµРЅР°"
     Exit Sub
     
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка: " & Err.Description, Err.Number
-    FailWithError "Ошибка запуска: " & Err.Description
+    LogMessage LL_ERROR, "РћС€РёР±РєР°: " & Err.Description, Err.Number
+    FailWithError "РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: " & Err.Description
 End Sub
 
 ' ============================================================================
-' Проверка: файл уже скачан полностью?
-' Используется менеджером И вызывается из Start
+' РџСЂРѕРІРµСЂРєР°: С„Р°Р№Р» СѓР¶Рµ СЃРєР°С‡Р°РЅ РїРѕР»РЅРѕСЃС‚СЊСЋ?
+' РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РјРµРЅРµРґР¶РµСЂРѕРј Р РІС‹Р·С‹РІР°РµС‚СЃСЏ РёР· Start
 ' ============================================================================
 Public Function CheckAndCompleteIfFileExists() As Boolean
     If m_isCompleted Then
@@ -233,27 +233,27 @@ Public Function CheckAndCompleteIfFileExists() As Boolean
         Exit Function
     End If
     
-    ' Если размер на сервере неизвестен - не можем проверить
+    ' Р•СЃР»Рё СЂР°Р·РјРµСЂ РЅР° СЃРµСЂРІРµСЂРµ РЅРµРёР·РІРµСЃС‚РµРЅ - РЅРµ РјРѕР¶РµРј РїСЂРѕРІРµСЂРёС‚СЊ
     If m_expectedSize <= 0 Then
         CheckAndCompleteIfFileExists = False
         Exit Function
     End If
     
-    ' Если файла нет на диске - не завершён
+    ' Р•СЃР»Рё С„Р°Р№Р»Р° РЅРµС‚ РЅР° РґРёСЃРєРµ - РЅРµ Р·Р°РІРµСЂС€С‘РЅ
     If m_startOffset <= 0 Then
         CheckAndCompleteIfFileExists = False
         Exit Function
     End If
     
-    ' Сравнение размеров
+    ' РЎСЂР°РІРЅРµРЅРёРµ СЂР°Р·РјРµСЂРѕРІ
     If m_startOffset >= m_expectedSize Then
-        LogMessage LL_INFO, "Файл уже полностью скачан (" & Format(m_startOffset, "#,##0") & " из " & _
-                  Format(m_expectedSize, "#,##0") & " байт)"
+        LogMessage LL_INFO, "Р¤Р°Р№Р» СѓР¶Рµ РїРѕР»РЅРѕСЃС‚СЊСЋ СЃРєР°С‡Р°РЅ (" & Format(m_startOffset, "#,##0") & " РёР· " & _
+                  Format(m_expectedSize, "#,##0") & " Р±Р°Р№С‚)"
         CompleteWithSuccess
         CheckAndCompleteIfFileExists = True
     ElseIf m_startOffset > 0 And m_startOffset < m_expectedSize Then
-        LogMessage LL_INFO, "Файл скачан частично (" & Format(m_startOffset, "#,##0") & " из " & _
-                  Format(m_expectedSize, "#,##0") & " байт), продолжаем докачку"
+        LogMessage LL_INFO, "Р¤Р°Р№Р» СЃРєР°С‡Р°РЅ С‡Р°СЃС‚РёС‡РЅРѕ (" & Format(m_startOffset, "#,##0") & " РёР· " & _
+                  Format(m_expectedSize, "#,##0") & " Р±Р°Р№С‚), РїСЂРѕРґРѕР»Р¶Р°РµРј РґРѕРєР°С‡РєСѓ"
         CheckAndCompleteIfFileExists = False
     Else
         CheckAndCompleteIfFileExists = False
@@ -261,7 +261,7 @@ Public Function CheckAndCompleteIfFileExists() As Boolean
 End Function
 
 ' ============================================================================
-' Успешное завершение
+' РЈСЃРїРµС€РЅРѕРµ Р·Р°РІРµСЂС€РµРЅРёРµ
 ' ============================================================================
 Private Sub CompleteWithSuccess()
     If m_isCompleted Then Exit Sub
@@ -285,7 +285,7 @@ Private Sub CompleteWithSuccess()
 End Sub
 
 ' ============================================================================
-' Завершение с ошибкой
+' Р—Р°РІРµСЂС€РµРЅРёРµ СЃ РѕС€РёР±РєРѕР№
 ' ============================================================================
 Private Sub FailWithError(ByVal errorMsg As String)
     If m_isCompleted Then Exit Sub
@@ -312,7 +312,7 @@ Private Sub FailWithError(ByVal errorMsg As String)
 End Sub
 
 ' ============================================================================
-' Отмена
+' РћС‚РјРµРЅР°
 ' ============================================================================
 Public Sub Cancel()
     m_isCancelled = True
@@ -324,16 +324,16 @@ Public Sub Cancel()
 End Sub
 
 ' ============================================================================
-' Рестарт
+' Р РµСЃС‚Р°СЂС‚
 ' ============================================================================
 Public Sub Restart()
     If m_restartCount >= m_maxRestarts Then
-        FailWithError "Превышено количество рестартов (" & m_maxRestarts & ")"
+        FailWithError "РџСЂРµРІС‹С€РµРЅРѕ РєРѕР»РёС‡РµСЃС‚РІРѕ СЂРµСЃС‚Р°СЂС‚РѕРІ (" & m_maxRestarts & ")"
         Exit Sub
     End If
     
     m_restartCount = m_restartCount + 1
-    LogMessage LL_WARNING, "Рестарт #" & m_restartCount
+    LogMessage LL_WARNING, "Р РµСЃС‚Р°СЂС‚ #" & m_restartCount
     
     On Error Resume Next
     If Not m_fileWriter Is Nothing Then
@@ -355,7 +355,7 @@ Public Sub Restart()
 End Sub
 
 ' ============================================================================
-' Проверка зависания
+' РџСЂРѕРІРµСЂРєР° Р·Р°РІРёСЃР°РЅРёСЏ
 ' ============================================================================
 Public Function IsStuck() As Boolean
     If m_isCompleted Or m_isCancelled Then
@@ -371,7 +371,7 @@ Public Function IsStuck() As Boolean
     idleTime = currentTime - m_lastActivityTime
     
     If idleTime > (m_receiveTimeout / 1000) + 30 Then
-        LogMessage LL_WARNING, "Обнаружен простой: " & Format(idleTime, "0") & " сек"
+        LogMessage LL_WARNING, "РћР±РЅР°СЂСѓР¶РµРЅ РїСЂРѕСЃС‚РѕР№: " & Format(idleTime, "0") & " СЃРµРє"
         IsStuck = True
         Exit Function
     End If
@@ -380,7 +380,7 @@ Public Function IsStuck() As Boolean
 End Function
 
 ' ============================================================================
-' Логирование
+' Р›РѕРіРёСЂРѕРІР°РЅРёРµ
 ' ============================================================================
 Private Sub LogMessage(ByVal level As Long, ByVal message As String, Optional ByVal errorCode As Long = 0)
     If Not m_callback Is Nothing Then
@@ -394,7 +394,7 @@ Private Sub ResetTracking()
 End Sub
 
 ' ============================================================================
-' СОБЫТИЯ WINHTTP
+' РЎРћР‘Р«РўРРЇ WINHTTP
 ' ============================================================================
 
 Private Sub m_http_OnResponseDataAvailable(arrData() As Byte)
@@ -411,12 +411,12 @@ Private Sub m_http_OnResponseDataAvailable(arrData() As Byte)
     m_receivedBytes = m_receivedBytes + chunkSize
     m_lastActivityTime = Timer
     
-    ' Определение размера из ответа (если HEAD не дал результат)
+    ' РћРїСЂРµРґРµР»РµРЅРёРµ СЂР°Р·РјРµСЂР° РёР· РѕС‚РІРµС‚Р° (РµСЃР»Рё HEAD РЅРµ РґР°Р» СЂРµР·СѓР»СЊС‚Р°С‚)
     If m_expectedSize = 0 Then
         ParseContentSizeFromResponse
     End If
     
-    ' Прогресс
+    ' РџСЂРѕРіСЂРµСЃСЃ
     If Not m_callback Is Nothing Then
         Dim percent As Integer
         If m_expectedSize > 0 Then
@@ -436,7 +436,7 @@ Private Sub m_http_OnResponseDataAvailable(arrData() As Byte)
     Exit Sub
     
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка в OnResponseDataAvailable: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "РћС€РёР±РєР° РІ OnResponseDataAvailable: " & Err.Description, Err.Number
 End Sub
 
 Private Sub ParseContentSizeFromResponse()
@@ -460,7 +460,7 @@ Private Sub ParseContentSizeFromResponse()
     End If
     
     If m_expectedSize > 0 Then
-        LogMessage LL_DEBUG, "Размер определён: " & Format(m_expectedSize, "#,##0") & " байт"
+        LogMessage LL_DEBUG, "Р Р°Р·РјРµСЂ РѕРїСЂРµРґРµР»С‘РЅ: " & Format(m_expectedSize, "#,##0") & " Р±Р°Р№С‚"
     End If
     
     On Error GoTo 0
@@ -479,21 +479,21 @@ Private Sub m_http_OnResponseFinished()
     Select Case m_http.status
         Case 200, 206
             success = True
-        Case 416  ' Range Not Satisfiable - файл уже полностью скачан
+        Case 416  ' Range Not Satisfiable - С„Р°Р№Р» СѓР¶Рµ РїРѕР»РЅРѕСЃС‚СЊСЋ СЃРєР°С‡Р°РЅ
             success = True
         Case 404
             success = False
-            errorMsg = "Файл не найден (404)"
+            errorMsg = "Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ (404)"
         Case 403
             success = False
-            errorMsg = "Доступ запрещён (403)"
+            errorMsg = "Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ (403)"
         Case Else
             success = False
             errorMsg = "HTTP " & m_http.status & ": " & m_http.StatusText
     End Select
     
     If success Then
-        ' Проверка размера (если известен)
+        ' РџСЂРѕРІРµСЂРєР° СЂР°Р·РјРµСЂР° (РµСЃР»Рё РёР·РІРµСЃС‚РµРЅ)
         If m_expectedSize > 0 Then
             Dim actualSize As Currency
             actualSize = GetFileSizeByPath(m_destPath)
@@ -501,16 +501,16 @@ Private Sub m_http_OnResponseFinished()
             If actualSize >= m_expectedSize - 1024 Then
                 CompleteWithSuccess
             ElseIf m_restartCount < m_maxRestarts Then
-                LogMessage LL_WARNING, "Несоответствие размера, рестарт"
+                LogMessage LL_WARNING, "РќРµСЃРѕРѕС‚РІРµС‚СЃС‚РІРёРµ СЂР°Р·РјРµСЂР°, СЂРµСЃС‚Р°СЂС‚"
                 Restart
             Else
-                FailWithError "Несоответствие размера"
+                FailWithError "РќРµСЃРѕРѕС‚РІРµС‚СЃС‚РІРёРµ СЂР°Р·РјРµСЂР°"
             End If
         Else
             If m_receivedBytes > 0 Or GetFileSizeByPath(m_destPath) > 0 Then
                 CompleteWithSuccess
             Else
-                FailWithError "Не получено данных"
+                FailWithError "РќРµ РїРѕР»СѓС‡РµРЅРѕ РґР°РЅРЅС‹С…"
             End If
         End If
     Else
@@ -521,7 +521,7 @@ End Sub
 Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As String)
     If m_isCompleted Or m_isCancelled Then Exit Sub
     
-    LogMessage LL_ERROR, "WinHTTP ошибка " & ErrorNumber & ": " & ErrorDescription
+    LogMessage LL_ERROR, "WinHTTP РѕС€РёР±РєР° " & ErrorNumber & ": " & ErrorDescription
     
     If Not m_fileWriter Is Nothing Then
         m_fileWriter.CloseFile
@@ -531,7 +531,7 @@ Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As 
     If m_restartCount < m_maxRestarts Then
         Restart
     Else
-        FailWithError "WinHTTP ошибка после " & m_restartCount & " рестартов"
+        FailWithError "WinHTTP РѕС€РёР±РєР° РїРѕСЃР»Рµ " & m_restartCount & " СЂРµСЃС‚Р°СЂС‚РѕРІ"
     End If
 End Sub
 

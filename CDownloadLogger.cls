@@ -8,15 +8,15 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
-' Класс: CDownloadLogger
-' Назначение: Логирование загрузок в Excel и файл с уровнями детализации
+' РљР»Р°СЃСЃ: CDownloadLogger
+' РќР°Р·РЅР°С‡РµРЅРёРµ: Р›РѕРіРёСЂРѕРІР°РЅРёРµ Р·Р°РіСЂСѓР·РѕРє РІ Excel Рё С„Р°Р№Р» СЃ СѓСЂРѕРІРЅСЏРјРё РґРµС‚Р°Р»РёР·Р°С†РёРё
 ' ============================================================================
 Option Explicit
 Implements IDownloadCallback
 
-Private Const LOG_BUFFER_SIZE As Long = 100  ' Буфер для текстового лога
+Private Const LOG_BUFFER_SIZE As Long = 100  ' Р‘СѓС„РµСЂ РґР»СЏ С‚РµРєСЃС‚РѕРІРѕРіРѕ Р»РѕРіР°
 
-' Колонки таблицы
+' РљРѕР»РѕРЅРєРё С‚Р°Р±Р»РёС†С‹
 Private Enum LogCol
     colTaskId = 1
     colUrl = 2
@@ -39,11 +39,11 @@ Private m_logBuffer As Collection
 Private m_isFileOpen As Boolean
 Private m_criticalErrors As Collection
 
-' Синхронизация
+' РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ
 Private m_syncLock As Object
 
 ' ============================================================================
-' Инициализация
+' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ
 ' ============================================================================
 Public Sub Init(ByVal logSheet As Worksheet, Optional ByVal logFilePath As String = "", _
                 Optional ByVal logLevel As Long = LL_INFO)
@@ -58,21 +58,21 @@ Public Sub Init(ByVal logSheet As Worksheet, Optional ByVal logFilePath As Strin
     Set m_syncLock = CreateObject("Scripting.Dictionary")
     m_syncLock.Add "lock", 1
     
-    ' Инициализация таблицы
+    ' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ С‚Р°Р±Р»РёС†С‹
     If Not logSheet Is Nothing Then
         InitLogSheet
     End If
     
-    ' Открытие файла лога
+    ' РћС‚РєСЂС‹С‚РёРµ С„Р°Р№Р»Р° Р»РѕРіР°
     If m_logFilePath <> "" Then
         OpenLogFile
     End If
     
-    LogMessage LL_INFO, 0, "Логгер инициализирован. Уровень логирования: " & CStr(m_logLevel)
+    LogMessage LL_INFO, 0, "Р›РѕРіРіРµСЂ РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅ. РЈСЂРѕРІРµРЅСЊ Р»РѕРіРёСЂРѕРІР°РЅРёСЏ: " & CStr(m_logLevel)
     Exit Sub
     
 ErrorHandler:
-    Debug.Print "CRITICAL: Ошибка инициализации логгера: " & Err.Description
+    Debug.Print "CRITICAL: РћС€РёР±РєР° РёРЅРёС†РёР°Р»РёР·Р°С†РёРё Р»РѕРіРіРµСЂР°: " & Err.Description
 End Sub
 
 ' ============================================================================
@@ -106,7 +106,7 @@ Private Sub OpenLogFile()
     
 ErrorHandler:
     m_isFileOpen = False
-    Debug.Print "ERROR: Не удалось открыть файл лога: " & m_logFilePath
+    Debug.Print "ERROR: РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р» Р»РѕРіР°: " & m_logFilePath
 End Sub
 
 ' ============================================================================
@@ -135,10 +135,10 @@ Public Sub LogMessage(ByVal level As Long, ByVal TaskId As Long, _
     logMsg = timestamp & " " & prefix & " " & taskStr & ": " & message
     If errorCode <> 0 Then logMsg = logMsg & " (Err: " & errorCode & ")"
     
-    ' Вывод в Immediate окно
+    ' Р’С‹РІРѕРґ РІ Immediate РѕРєРЅРѕ
     Debug.Print logMsg
     
-    ' Запись в файл (буферизованная)
+    ' Р—Р°РїРёСЃСЊ РІ С„Р°Р№Р» (Р±СѓС„РµСЂРёР·РѕРІР°РЅРЅР°СЏ)
     If m_isFileOpen Then
         On Error Resume Next
         Print #m_logFileHandle, logMsg
@@ -148,7 +148,7 @@ Public Sub LogMessage(ByVal level As Long, ByVal TaskId As Long, _
         On Error GoTo 0
     End If
     
-    ' Критические ошибки сохраняем отдельно
+    ' РљСЂРёС‚РёС‡РµСЃРєРёРµ РѕС€РёР±РєРё СЃРѕС…СЂР°РЅСЏРµРј РѕС‚РґРµР»СЊРЅРѕ
     If level = LL_CRITICAL Then
         On Error Resume Next
         m_criticalErrors.Add logMsg
@@ -191,7 +191,7 @@ Private Function GetTaskRow(ByVal TaskId As Long) As Variant
         Exit Function
     End If
     
-    ' Поиск в таблице
+    ' РџРѕРёСЃРє РІ С‚Р°Р±Р»РёС†Рµ
     On Error Resume Next
     Dim cell As Range
     Set cell = m_logSheet.Columns(LogCol.colTaskId).Find(What:=TaskId, LookAt:=xlWhole)
@@ -205,12 +205,12 @@ Private Function GetTaskRow(ByVal TaskId As Long) As Variant
 End Function
 
 ' ============================================================================
-' Реализация IDownloadCallback
+' Р РµР°Р»РёР·Р°С†РёСЏ IDownloadCallback
 ' ============================================================================
 Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String)
     On Error GoTo ErrorHandler
     
-    LogMessage LL_INFO, TaskId, "Начало загрузки: " & url
+    LogMessage LL_INFO, TaskId, "РќР°С‡Р°Р»Рѕ Р·Р°РіСЂСѓР·РєРё: " & url
     
     If m_logSheet Is Nothing Then Exit Sub
     
@@ -222,7 +222,7 @@ Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String,
         .Cells(newRow, LogCol.colTaskId).Value = TaskId
         .Cells(newRow, LogCol.colUrl).Value = url
         .Cells(newRow, LogCol.colDest).Value = destPath
-        .Cells(newRow, LogCol.colStatus).Value = "Загрузка..."
+        .Cells(newRow, LogCol.colStatus).Value = "Р—Р°РіСЂСѓР·РєР°..."
         .Cells(newRow, LogCol.colProgress).Value = 0
         .Cells(newRow, LogCol.colStartTime).Value = Now
         .Cells(newRow, LogCol.colRetryCount).Value = 0
@@ -232,7 +232,7 @@ Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String,
     Exit Sub
     
 ErrorHandler:
-    LogMessage LL_ERROR, TaskId, "Ошибка OnStart: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, TaskId, "РћС€РёР±РєР° OnStart: " & Err.Description, Err.Number
 End Sub
 
 ' ============================================================================
@@ -240,7 +240,7 @@ Private Sub IDownloadCallback_OnProgress(ByVal TaskId As Long, ByVal bytesReceiv
                                           ByVal totalBytes As Currency, ByVal percent As Integer)
     If percent < 0 Or percent > 100 Then Exit Sub
     
-    ' Обновляем Excel только при изменении процента (оптимизация)
+    ' РћР±РЅРѕРІР»СЏРµРј Excel С‚РѕР»СЊРєРѕ РїСЂРё РёР·РјРµРЅРµРЅРёРё РїСЂРѕС†РµРЅС‚Р° (РѕРїС‚РёРјРёР·Р°С†РёСЏ)
     Static lastPercent As Integer
     
     If percent Mod 5 = 0 Or percent = 100 Then
@@ -260,9 +260,9 @@ Private Sub IDownloadCallback_OnProgress(ByVal TaskId As Long, ByVal bytesReceiv
         lastPercent = percent
     End If
     
-    ' Логирование прогресса только на DEBUG уровне
+    ' Р›РѕРіРёСЂРѕРІР°РЅРёРµ РїСЂРѕРіСЂРµСЃСЃР° С‚РѕР»СЊРєРѕ РЅР° DEBUG СѓСЂРѕРІРЅРµ
     If m_logLevel >= LL_DEBUG Then
-        LogMessage LL_DEBUG, TaskId, "Прогресс: " & percent & "%"
+        LogMessage LL_DEBUG, TaskId, "РџСЂРѕРіСЂРµСЃСЃ: " & percent & "%"
     End If
 End Sub
 
@@ -275,13 +275,13 @@ Private Sub IDownloadCallback_OnComplete(ByVal TaskId As Long, ByVal url As Stri
     Dim logLevel As Long
     
     If success Then
-        status = "Завершено"
+        status = "Р—Р°РІРµСЂС€РµРЅРѕ"
         logLevel = LL_INFO
-        LogMessage logLevel, TaskId, "Загрузка успешно завершена: " & destPath
+        LogMessage logLevel, TaskId, "Р—Р°РіСЂСѓР·РєР° СѓСЃРїРµС€РЅРѕ Р·Р°РІРµСЂС€РµРЅР°: " & destPath
     Else
-        status = "Ошибка"
+        status = "РћС€РёР±РєР°"
         logLevel = LL_ERROR
-        LogMessage logLevel, TaskId, "Ошибка загрузки: " & errorMsg
+        LogMessage logLevel, TaskId, "РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё: " & errorMsg
     End If
     
     If m_logSheet Is Nothing Then GoTo SkipExcel
@@ -308,7 +308,7 @@ SkipExcel:
     Exit Sub
     
 ErrorHandler:
-    LogMessage LL_CRITICAL, TaskId, "Критическая ошибка в OnComplete: " & Err.Description, Err.Number
+    LogMessage LL_CRITICAL, TaskId, "РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР° РІ OnComplete: " & Err.Description, Err.Number
 End Sub
 
 ' ============================================================================

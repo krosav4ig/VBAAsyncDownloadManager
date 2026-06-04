@@ -1,7 +1,7 @@
 Attribute VB_Name = "Module1"
 ' ============================================================================
-' Модуль: Module1
-' Назначение: Точка входа, глобальные обработчики
+' РњРѕРґСѓР»СЊ: Module1
+' РќР°Р·РЅР°С‡РµРЅРёРµ: РўРѕС‡РєР° РІС…РѕРґР°, РіР»РѕР±Р°Р»СЊРЅС‹Рµ РѕР±СЂР°Р±РѕС‚С‡РёРєРё
 ' ============================================================================
 Option Explicit
 
@@ -16,7 +16,7 @@ Private g_logger As CDownloadLogger
 Private g_criticalErrorLogPath As String
 
 ' ============================================================================
-' Глобальный таймер (вызывается менеджером)
+' Р“Р»РѕР±Р°Р»СЊРЅС‹Р№ С‚Р°Р№РјРµСЂ (РІС‹Р·С‹РІР°РµС‚СЃСЏ РјРµРЅРµРґР¶РµСЂРѕРј)
 ' ============================================================================
 Public Sub CAsyncDownloadManager_TimerCheck()
     On Error GoTo ErrorHandler
@@ -28,7 +28,7 @@ Public Sub CAsyncDownloadManager_TimerCheck()
     Exit Sub
     
 ErrorHandler:
-    ' Критическая ошибка - попытка логирования
+    ' РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР° - РїРѕРїС‹С‚РєР° Р»РѕРіРёСЂРѕРІР°РЅРёСЏ
     On Error Resume Next
     Dim logFile As Integer
     logFile = FreeFile
@@ -39,26 +39,26 @@ ErrorHandler:
 End Sub
 
 ' ============================================================================
-' Основная процедура запуска
+' РћСЃРЅРѕРІРЅР°СЏ РїСЂРѕС†РµРґСѓСЂР° Р·Р°РїСѓСЃРєР°
 ' ============================================================================
 Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO)
     On Error GoTo CriticalError
     
-    ' Инициализация критического лога
+    ' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РєСЂРёС‚РёС‡РµСЃРєРѕРіРѕ Р»РѕРіР°
     g_criticalErrorLogPath = ThisWorkbook.Path & "\critical_errors.log"
     
-    ' Подготовка лог-листа
+    ' РџРѕРґРіРѕС‚РѕРІРєР° Р»РѕРі-Р»РёСЃС‚Р°
     Dim wsLog As Worksheet
     Set wsLog = GetOrCreateLogSheet()
     
-    ' Инициализация логгера
+    ' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ Р»РѕРіРіРµСЂР°
     Set g_logger = New CDownloadLogger
     g_logger.Init wsLog, ThisWorkbook.Path & "\download_log.txt", logLevel
     g_logger.ReloadDictionary
     
-    g_logger.LogMessage LL_INFO, 0, "=== НАЧАЛО СЕССИИ ЗАГРУЗКИ ==="
+    g_logger.LogMessage LL_INFO, 0, "=== РќРђР§РђР›Рћ РЎР•РЎРЎРР Р—РђР“Р РЈР—РљР ==="
     
-    ' Инициализация менеджера
+    ' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РјРµРЅРµРґР¶РµСЂР°
     Set g_manager = New CAsyncDownloadManager
     g_manager.Init maxConcurrent:=5, callback:=g_logger, _
                    resolveTimeoutMs:=30000, connectTimeoutMs:=60000, _
@@ -66,26 +66,26 @@ Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO)
                    bufferSizeBytes:=131072, checkIntervalSec:=3, _
                    maxRetries:=3
     
-    ' Подключение обработчиков событий
+    ' РџРѕРґРєР»СЋС‡РµРЅРёРµ РѕР±СЂР°Р±РѕС‚С‡РёРєРѕРІ СЃРѕР±С‹С‚РёР№
     HookManagerEvents
     
-    ' Чтение задач
+    ' Р§С‚РµРЅРёРµ Р·Р°РґР°С‡
     Dim taskCount As Long
     taskCount = LoadTasksFromTable()
     
     If taskCount = 0 Then
-        g_logger.LogMessage LL_WARNING, 0, "Нет задач для загрузки"
-        MsgBox "Нет задач для загрузки. Проверьте таблицу 'Ссылки'.", vbExclamation
+        g_logger.LogMessage LL_WARNING, 0, "РќРµС‚ Р·Р°РґР°С‡ РґР»СЏ Р·Р°РіСЂСѓР·РєРё"
+        MsgBox "РќРµС‚ Р·Р°РґР°С‡ РґР»СЏ Р·Р°РіСЂСѓР·РєРё. РџСЂРѕРІРµСЂСЊС‚Рµ С‚Р°Р±Р»РёС†Сѓ 'РЎСЃС‹Р»РєРё'.", vbExclamation
         Cleanup
         Exit Sub
     End If
     
-    g_logger.LogMessage LL_INFO, 0, "Загружено задач: " & taskCount
+    g_logger.LogMessage LL_INFO, 0, "Р—Р°РіСЂСѓР¶РµРЅРѕ Р·Р°РґР°С‡: " & taskCount
     
-    ' Запуск
+    ' Р—Р°РїСѓСЃРє
     g_manager.Start
     
-    ' Цикл ожидания с обработкой событий
+    ' Р¦РёРєР» РѕР¶РёРґР°РЅРёСЏ СЃ РѕР±СЂР°Р±РѕС‚РєРѕР№ СЃРѕР±С‹С‚РёР№
     Dim lastStatusTime As Date
     lastStatusTime = Now
     
@@ -93,42 +93,42 @@ Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO)
         DoEvents
         Sleep 50
         
-        ' Периодический вывод статуса (каждые 5 секунд)
+        ' РџРµСЂРёРѕРґРёС‡РµСЃРєРёР№ РІС‹РІРѕРґ СЃС‚Р°С‚СѓСЃР° (РєР°Р¶РґС‹Рµ 5 СЃРµРєСѓРЅРґ)
         If DateDiff("s", lastStatusTime, Now) >= 5 Then
             lastStatusTime = Now
-            Debug.Print Format(Now, "HH:MM:SS") & " - Активно: " & g_manager.ActiveCount & _
-                          ", Ожидает: " & g_manager.PendingCount & _
-                          ", Завершено: " & g_manager.CompletedCount & _
-                          ", Ошибок: " & g_manager.FailedCount
+            Debug.Print Format(Now, "HH:MM:SS") & " - РђРєС‚РёРІРЅРѕ: " & g_manager.ActiveCount & _
+                          ", РћР¶РёРґР°РµС‚: " & g_manager.PendingCount & _
+                          ", Р—Р°РІРµСЂС€РµРЅРѕ: " & g_manager.CompletedCount & _
+                          ", РћС€РёР±РѕРє: " & g_manager.FailedCount
         End If
     Loop
     
-    ' Итоговое сообщение
+    ' РС‚РѕРіРѕРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ
     Dim resultMsg As String
-    resultMsg = "Все загрузки завершены!" & vbNewLine & _
-                "Успешно: " & g_manager.CompletedCount & vbNewLine & _
-                "Ошибок: " & g_manager.FailedCount
+    resultMsg = "Р’СЃРµ Р·Р°РіСЂСѓР·РєРё Р·Р°РІРµСЂС€РµРЅС‹!" & vbNewLine & _
+                "РЈСЃРїРµС€РЅРѕ: " & g_manager.CompletedCount & vbNewLine & _
+                "РћС€РёР±РѕРє: " & g_manager.FailedCount
     
     If g_manager.FailedCount > 0 Then
-        resultMsg = resultMsg & vbNewLine & vbNewLine & "Проверьте лог для деталей."
+        resultMsg = resultMsg & vbNewLine & vbNewLine & "РџСЂРѕРІРµСЂСЊС‚Рµ Р»РѕРі РґР»СЏ РґРµС‚Р°Р»РµР№."
         MsgBox resultMsg, vbExclamation
     Else
         MsgBox resultMsg, vbInformation
     End If
     
-    g_logger.LogMessage LL_INFO, 0, "=== СЕССИЯ ЗАВЕРШЕНА ==="
+    g_logger.LogMessage LL_INFO, 0, "=== РЎР•РЎРЎРРЇ Р—РђР’Р•Р РЁР•РќРђ ==="
     
     Cleanup
     Exit Sub
     
 CriticalError:
     Dim critMsg As String
-    critMsg = "КРИТИЧЕСКАЯ ОШИБКА: " & Err.Description & vbNewLine & _
-              "Код: " & Err.Number & vbNewLine & _
-              "Место: " & Erl & vbNewLine & _
-              "Пожалуйста, перезапустите приложение."
+    critMsg = "РљР РРўРР§Р•РЎРљРђРЇ РћРЁРР‘РљРђ: " & Err.Description & vbNewLine & _
+              "РљРѕРґ: " & Err.Number & vbNewLine & _
+              "РњРµСЃС‚Рѕ: " & Erl & vbNewLine & _
+              "РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РїРµСЂРµР·Р°РїСѓСЃС‚РёС‚Рµ РїСЂРёР»РѕР¶РµРЅРёРµ."
     
-    MsgBox critMsg, vbCritical, "Критическая ошибка"
+    MsgBox critMsg, vbCritical, "РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР°"
     
     On Error Resume Next
     Dim critFile As Integer
@@ -142,7 +142,7 @@ CriticalError:
 End Sub
 
 ' ============================================================================
-' Получение или создание лог-листа
+' РџРѕР»СѓС‡РµРЅРёРµ РёР»Рё СЃРѕР·РґР°РЅРёРµ Р»РѕРі-Р»РёСЃС‚Р°
 ' ============================================================================
 Private Function GetOrCreateLogSheet() As Worksheet
     On Error Resume Next
@@ -155,7 +155,7 @@ Private Function GetOrCreateLogSheet() As Worksheet
 End Function
 
 ' ============================================================================
-' Загрузка задач из таблицы
+' Р—Р°РіСЂСѓР·РєР° Р·Р°РґР°С‡ РёР· С‚Р°Р±Р»РёС†С‹
 ' ============================================================================
 Private Function LoadTasksFromTable() As Long
     Dim tbl As ListObject
@@ -165,25 +165,25 @@ Private Function LoadTasksFromTable() As Long
     Dim count As Long
     
     On Error Resume Next
-    Set tbl = ThisWorkbook.Sheets("Лист1").ListObjects("Ссылки")
+    Set tbl = ThisWorkbook.Sheets("Р›РёСЃС‚1").ListObjects("РЎСЃС‹Р»РєРё")
     If tbl Is Nothing Then
-        g_logger.LogMessage LL_ERROR, 0, "Таблица 'Ссылки' не найдена на листе Sheet1"
+        g_logger.LogMessage LL_ERROR, 0, "РўР°Р±Р»РёС†Р° 'РЎСЃС‹Р»РєРё' РЅРµ РЅР°Р№РґРµРЅР° РЅР° Р»РёСЃС‚Рµ Sheet1"
         LoadTasksFromTable = 0
         Exit Function
     End If
     
-    ' Поиск колонок
-    urlCol = GetColumnIndex(tbl, "Ссылка")
-    pathCol = GetColumnIndex(tbl, "Путь для сохранения")
+    ' РџРѕРёСЃРє РєРѕР»РѕРЅРѕРє
+    urlCol = GetColumnIndex(tbl, "РЎСЃС‹Р»РєР°")
+    pathCol = GetColumnIndex(tbl, "РџСѓС‚СЊ РґР»СЏ СЃРѕС…СЂР°РЅРµРЅРёСЏ")
     
     If urlCol = 0 Then
-        g_logger.LogMessage LL_ERROR, 0, "Колонка 'URL' не найдена"
+        g_logger.LogMessage LL_ERROR, 0, "РљРѕР»РѕРЅРєР° 'URL' РЅРµ РЅР°Р№РґРµРЅР°"
         LoadTasksFromTable = 0
         Exit Function
     End If
     
     If pathCol = 0 Then
-        g_logger.LogMessage LL_ERROR, 0, "Колонка 'Путь для сохранения' не найдена"
+        g_logger.LogMessage LL_ERROR, 0, "РљРѕР»РѕРЅРєР° 'РџСѓС‚СЊ РґР»СЏ СЃРѕС…СЂР°РЅРµРЅРёСЏ' РЅРµ РЅР°Р№РґРµРЅР°"
         LoadTasksFromTable = 0
         Exit Function
     End If
@@ -212,7 +212,7 @@ Private Function LoadTasksFromTable() As Long
 End Function
 
 ' ============================================================================
-' Получение индекса колонки по имени
+' РџРѕР»СѓС‡РµРЅРёРµ РёРЅРґРµРєСЃР° РєРѕР»РѕРЅРєРё РїРѕ РёРјРµРЅРё
 ' ============================================================================
 Private Function GetColumnIndex(ByVal tbl As ListObject, ByVal colName As String) As Long
     Dim col As ListColumn
@@ -226,16 +226,16 @@ Private Function GetColumnIndex(ByVal tbl As ListObject, ByVal colName As String
 End Function
 
 ' ============================================================================
-' Подключение событий менеджера
+' РџРѕРґРєР»СЋС‡РµРЅРёРµ СЃРѕР±С‹С‚РёР№ РјРµРЅРµРґР¶РµСЂР°
 ' ============================================================================
 Private Sub HookManagerEvents()
-    ' В VBA нельзя использовать WithEvents на переменной, объявленной через New
-    ' Поэтому используем вспомогательный класс-обёртку
-    ' Для упрощения: события обрабатываются через таймер
+    ' Р’ VBA РЅРµР»СЊР·СЏ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ WithEvents РЅР° РїРµСЂРµРјРµРЅРЅРѕР№, РѕР±СЉСЏРІР»РµРЅРЅРѕР№ С‡РµСЂРµР· New
+    ' РџРѕСЌС‚РѕРјСѓ РёСЃРїРѕР»СЊР·СѓРµРј РІСЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Р№ РєР»Р°СЃСЃ-РѕР±С‘СЂС‚РєСѓ
+    ' Р”Р»СЏ СѓРїСЂРѕС‰РµРЅРёСЏ: СЃРѕР±С‹С‚РёСЏ РѕР±СЂР°Р±Р°С‚С‹РІР°СЋС‚СЃСЏ С‡РµСЂРµР· С‚Р°Р№РјРµСЂ
 End Sub
 
 ' ============================================================================
-' Очистка ресурсов
+' РћС‡РёСЃС‚РєР° СЂРµСЃСѓСЂСЃРѕРІ
 ' ============================================================================
 Private Sub Cleanup()
     On Error Resume Next
@@ -254,7 +254,7 @@ Private Sub Cleanup()
 End Sub
 
 ' ============================================================================
-' Обработчик потери состояния (вызывается StateLossCallback)
+' РћР±СЂР°Р±РѕС‚С‡РёРє РїРѕС‚РµСЂРё СЃРѕСЃС‚РѕСЏРЅРёСЏ (РІС‹Р·С‹РІР°РµС‚СЃСЏ StateLossCallback)
 ' ============================================================================
 Public Sub OnWorkerLostState(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String)
     On Error Resume Next
@@ -262,16 +262,16 @@ Public Sub OnWorkerLostState(ByVal TaskId As Long, ByVal url As String, ByVal de
     Dim logMsg As String
     logMsg = Now & " [STATE_LOSS] Worker #" & TaskId & " lost state. URL: " & url
     
-    ' Запись в критический лог
+    ' Р—Р°РїРёСЃСЊ РІ РєСЂРёС‚РёС‡РµСЃРєРёР№ Р»РѕРі
     Dim critFile As Integer
     critFile = FreeFile
     Open g_criticalErrorLogPath For Append As #critFile
     Print #critFile, logMsg
     Close #critFile
     
-    ' Попытка восстановления через менеджер
+    ' РџРѕРїС‹С‚РєР° РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ С‡РµСЂРµР· РјРµРЅРµРґР¶РµСЂ
     If Not g_manager Is Nothing Then
-        ' Перезапуск задачи
+        ' РџРµСЂРµР·Р°РїСѓСЃРє Р·Р°РґР°С‡Рё
         g_manager.AddTask url, destPath
     End If
     
@@ -279,32 +279,32 @@ Public Sub OnWorkerLostState(ByVal TaskId As Long, ByVal url As String, ByVal de
 End Sub
 
 ' ============================================================================
-' Остановка всех загрузок (можно вызвать из кнопки)
+' РћСЃС‚Р°РЅРѕРІРєР° РІСЃРµС… Р·Р°РіСЂСѓР·РѕРє (РјРѕР¶РЅРѕ РІС‹Р·РІР°С‚СЊ РёР· РєРЅРѕРїРєРё)
 ' ============================================================================
 Public Sub StopAllDownloads()
     If Not g_manager Is Nothing Then
         g_manager.StopAll
-        Debug.Print "Все загрузки остановлены пользователем"
+        Debug.Print "Р’СЃРµ Р·Р°РіСЂСѓР·РєРё РѕСЃС‚Р°РЅРѕРІР»РµРЅС‹ РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј"
     End If
 End Sub
 
 ' ============================================================================
-' Приостановка загрузок
+' РџСЂРёРѕСЃС‚Р°РЅРѕРІРєР° Р·Р°РіСЂСѓР·РѕРє
 ' ============================================================================
 Public Sub PauseDownloads()
     If Not g_manager Is Nothing Then
         g_manager.Pause
-        Debug.Print "Загрузки приостановлены"
+        Debug.Print "Р—Р°РіСЂСѓР·РєРё РїСЂРёРѕСЃС‚Р°РЅРѕРІР»РµРЅС‹"
     End If
 End Sub
 
 ' ============================================================================
-' Возобновление загрузок
+' Р’РѕР·РѕР±РЅРѕРІР»РµРЅРёРµ Р·Р°РіСЂСѓР·РѕРє
 ' ============================================================================
 Public Sub Resume_Downloads()
     If Not g_manager Is Nothing Then
         g_manager.Resume_
-        Debug.Print "Загрузки возобновлены"
+        Debug.Print "Р—Р°РіСЂСѓР·РєРё РІРѕР·РѕР±РЅРѕРІР»РµРЅС‹"
     End If
 End Sub
 

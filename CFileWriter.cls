@@ -8,12 +8,12 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
-' Класс: CFileWriter
-' Назначение: Буферизированная запись в файл с поддержкой больших файлов
+' РљР»Р°СЃСЃ: CFileWriter
+' РќР°Р·РЅР°С‡РµРЅРёРµ: Р‘СѓС„РµСЂРёР·РёСЂРѕРІР°РЅРЅР°СЏ Р·Р°РїРёСЃСЊ РІ С„Р°Р№Р» СЃ РїРѕРґРґРµСЂР¶РєРѕР№ Р±РѕР»СЊС€РёС… С„Р°Р№Р»РѕРІ
 ' ============================================================================
 Option Explicit
 
-Private Const MAX_BUFFER_SIZE As Long = 1048576  ' 1MB максимум
+Private Const MAX_BUFFER_SIZE As Long = 1048576  ' 1MB РјР°РєСЃРёРјСѓРј
 
 Private m_hFile As LongPtr
 Private m_buffer() As Byte
@@ -33,7 +33,7 @@ Private m_totalBytesWritten As Currency
 #End If
 
 ' ============================================================================
-' Инициализация
+' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ
 ' ============================================================================
 Public Function Init(ByVal destPath As String, ByVal bufferSize As Long, _
                      Optional ByVal appendMode As Boolean = False) As Boolean
@@ -41,7 +41,7 @@ Public Function Init(ByVal destPath As String, ByVal bufferSize As Long, _
     
     If m_isOpen Then CloseFile
     
-    ' Ограничение размера буфера
+    ' РћРіСЂР°РЅРёС‡РµРЅРёРµ СЂР°Р·РјРµСЂР° Р±СѓС„РµСЂР°
     If bufferSize < 4096 Then bufferSize = 4096
     If bufferSize > MAX_BUFFER_SIZE Then bufferSize = MAX_BUFFER_SIZE
     
@@ -50,13 +50,13 @@ Public Function Init(ByVal destPath As String, ByVal bufferSize As Long, _
     m_writeErrorCount = 0
     m_totalBytesWritten = 0@
     
-    ' Создание директории при необходимости
+    ' РЎРѕР·РґР°РЅРёРµ РґРёСЂРµРєС‚РѕСЂРёРё РїСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё
     If Not CreateDirectoryRecursive(GetParentPath(destPath)) Then
         Init = False
         Exit Function
     End If
     
-    ' Открытие файла
+    ' РћС‚РєСЂС‹С‚РёРµ С„Р°Р№Р»Р°
     m_hFile = OpenFileForWrite(destPath, appendMode)
     
     If m_hFile = 0 Then
@@ -64,7 +64,7 @@ Public Function Init(ByVal destPath As String, ByVal bufferSize As Long, _
         Exit Function
     End If
     
-    ' Выделение буфера
+    ' Р’С‹РґРµР»РµРЅРёРµ Р±СѓС„РµСЂР°
     ReDim m_buffer(0 To m_bufferSize - 1)
     m_bufferPos = 0
     m_isOpen = True
@@ -76,7 +76,7 @@ ErrorHandler:
 End Function
 
 ' ============================================================================
-' Запись данных
+' Р—Р°РїРёСЃСЊ РґР°РЅРЅС‹С…
 ' ============================================================================
 Public Sub WriteBytes(Data() As Byte)
     If Not m_isOpen Then Exit Sub
@@ -116,7 +116,7 @@ ErrorHandler:
 End Sub
 
 ' ============================================================================
-' Внутренний сброс буфера
+' Р’РЅСѓС‚СЂРµРЅРЅРёР№ СЃР±СЂРѕСЃ Р±СѓС„РµСЂР°
 ' ============================================================================
 Private Function FlushInternal() As Boolean
     If Not m_isOpen Then
@@ -136,7 +136,7 @@ Private Function FlushInternal() As Boolean
 End Function
 
 ' ============================================================================
-' Публичный сброс буфера
+' РџСѓР±Р»РёС‡РЅС‹Р№ СЃР±СЂРѕСЃ Р±СѓС„РµСЂР°
 ' ============================================================================
 Public Sub Flush()
     If Not m_isOpen Then Exit Sub
@@ -144,7 +144,7 @@ Public Sub Flush()
 End Sub
 
 ' ============================================================================
-' Закрытие файла
+' Р—Р°РєСЂС‹С‚РёРµ С„Р°Р№Р»Р°
 ' ============================================================================
 Public Sub CloseFile()
     If Not m_isOpen Then Exit Sub
@@ -157,7 +157,7 @@ Public Sub CloseFile()
 End Sub
 
 ' ============================================================================
-' Получение текущего размера (файл + буфер)
+' РџРѕР»СѓС‡РµРЅРёРµ С‚РµРєСѓС‰РµРіРѕ СЂР°Р·РјРµСЂР° (С„Р°Р№Р» + Р±СѓС„РµСЂ)
 ' ============================================================================
 Public Function GetCurrentSize() As Currency
     If m_isOpen Then
@@ -169,14 +169,14 @@ Public Function GetCurrentSize() As Currency
 End Function
 
 ' ============================================================================
-' Проверка целостности
+' РџСЂРѕРІРµСЂРєР° С†РµР»РѕСЃС‚РЅРѕСЃС‚Рё
 ' ============================================================================
 Public Function IsHealthy() As Boolean
     IsHealthy = (m_writeErrorCount <= 3)
 End Function
 
 ' ============================================================================
-' Вспомогательные функции
+' Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ С„СѓРЅРєС†РёРё
 ' ============================================================================
 Private Function GetParentPath(ByVal filePath As String) As String
     Dim pos As Integer

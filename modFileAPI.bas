@@ -1,11 +1,11 @@
 Attribute VB_Name = "modFileAPI"
 ' ============================================================================
-' Модуль: modFileAPI.bas
-' Назначение: Работа с файлами через WinAPI с поддержкой больших файлов (>2GB)
+' РњРѕРґСѓР»СЊ: modFileAPI.bas
+' РќР°Р·РЅР°С‡РµРЅРёРµ: Р Р°Р±РѕС‚Р° СЃ С„Р°Р№Р»Р°РјРё С‡РµСЂРµР· WinAPI СЃ РїРѕРґРґРµСЂР¶РєРѕР№ Р±РѕР»СЊС€РёС… С„Р°Р№Р»РѕРІ (>2GB)
 ' ============================================================================
 Option Explicit
 
-' Константы
+' РљРѕРЅСЃС‚Р°РЅС‚С‹
 Private Const GENERIC_READ As Long = &H80000000
 Private Const GENERIC_WRITE As Long = &H40000000
 Private Const FILE_SHARE_READ As Long = &H1
@@ -81,7 +81,7 @@ Private Const FILE_END As Long = 2
 #End If
 
 ' ============================================================================
-' Получение размера файла (возвращает байты как Currency, поддерживает >2GB)
+' РџРѕР»СѓС‡РµРЅРёРµ СЂР°Р·РјРµСЂР° С„Р°Р№Р»Р° (РІРѕР·РІСЂР°С‰Р°РµС‚ Р±Р°Р№С‚С‹ РєР°Рє Currency, РїРѕРґРґРµСЂР¶РёРІР°РµС‚ >2GB)
 ' ============================================================================
 Public Function GetFileSizeByPath(ByVal filePath As String) As Currency
     On Error GoTo ErrorHandler
@@ -97,20 +97,20 @@ Public Function GetFileSizeByPath(ByVal filePath As String) As Currency
         Dim hFile As Long
     #End If
     
-    ' Открываем файл только для чтения
+    ' РћС‚РєСЂС‹РІР°РµРј С„Р°Р№Р» С‚РѕР»СЊРєРѕ РґР»СЏ С‡С‚РµРЅРёСЏ
     hFile = CreateFileW(StrPtr(filePath), GENERIC_READ, FILE_SHARE_READ Or FILE_SHARE_WRITE, _
                         0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0)
     
     If hFile = INVALID_HANDLE_VALUE Then
-        ' Файл не существует или недоступен
+        ' Р¤Р°Р№Р» РЅРµ СЃСѓС‰РµСЃС‚РІСѓРµС‚ РёР»Рё РЅРµРґРѕСЃС‚СѓРїРµРЅ
         GetFileSizeByPath = -1@
         Exit Function
     End If
     
     Dim fileSize As Currency
     If GetFileSizeEx(hFile, fileSize) <> 0 Then
-        ' GetFileSizeEx возвращает размер в 64-битном формате,
-        ' Currency хранит как масштабированное целое (4 знака)
+        ' GetFileSizeEx РІРѕР·РІСЂР°С‰Р°РµС‚ СЂР°Р·РјРµСЂ РІ 64-Р±РёС‚РЅРѕРј С„РѕСЂРјР°С‚Рµ,
+        ' Currency С…СЂР°РЅРёС‚ РєР°Рє РјР°СЃС€С‚Р°Р±РёСЂРѕРІР°РЅРЅРѕРµ С†РµР»РѕРµ (4 Р·РЅР°РєР°)
         GetFileSizeByPath = fileSize * 10000
     Else
         GetFileSizeByPath = -1@
@@ -124,7 +124,7 @@ ErrorHandler:
 End Function
 
 ' ============================================================================
-' Проверка существования и размера файла
+' РџСЂРѕРІРµСЂРєР° СЃСѓС‰РµСЃС‚РІРѕРІР°РЅРёСЏ Рё СЂР°Р·РјРµСЂР° С„Р°Р№Р»Р°
 ' ============================================================================
 Public Function FileExistsAndGetSize(ByVal filePath As String, ByRef outSize As Currency) As Boolean
     outSize = GetFileSizeByPath(filePath)
@@ -132,7 +132,7 @@ Public Function FileExistsAndGetSize(ByVal filePath As String, ByRef outSize As 
 End Function
 
 ' ============================================================================
-' Открытие файла для записи (с поддержкой дозаписи)
+' РћС‚РєСЂС‹С‚РёРµ С„Р°Р№Р»Р° РґР»СЏ Р·Р°РїРёСЃРё (СЃ РїРѕРґРґРµСЂР¶РєРѕР№ РґРѕР·Р°РїРёСЃРё)
 ' ============================================================================
 #If VBA7 Then
 Public Function OpenFileForWrite(ByVal filePath As String, Optional ByVal appendMode As Boolean = False) As LongPtr
@@ -143,10 +143,10 @@ Public Function OpenFileForWrite(ByVal filePath As String, Optional ByVal append
     Dim createDisposition As Long
     
     If appendMode Then
-        ' Режим дозаписи - открываем существующий или создаём новый
+        ' Р РµР¶РёРј РґРѕР·Р°РїРёСЃРё - РѕС‚РєСЂС‹РІР°РµРј СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёР№ РёР»Рё СЃРѕР·РґР°С‘Рј РЅРѕРІС‹Р№
         createDisposition = OPEN_ALWAYS
     Else
-        ' Режим перезаписи
+        ' Р РµР¶РёРј РїРµСЂРµР·Р°РїРёСЃРё
         createDisposition = CREATE_ALWAYS
     End If
     
@@ -158,7 +158,7 @@ Public Function OpenFileForWrite(ByVal filePath As String, Optional ByVal append
         Exit Function
     End If
     
-    ' Если режим дозаписи - перемещаем указатель в конец
+    ' Р•СЃР»Рё СЂРµР¶РёРј РґРѕР·Р°РїРёСЃРё - РїРµСЂРµРјРµС‰Р°РµРј СѓРєР°Р·Р°С‚РµР»СЊ РІ РєРѕРЅРµС†
     If appendMode Then
         Dim fileSize As Currency
         If GetFileSizeEx(hFile, fileSize) <> 0 Then
@@ -171,7 +171,7 @@ Public Function OpenFileForWrite(ByVal filePath As String, Optional ByVal append
 End Function
 
 ' ============================================================================
-' Запись данных в файл
+' Р—Р°РїРёСЃСЊ РґР°РЅРЅС‹С… РІ С„Р°Р№Р»
 ' ============================================================================
 #If VBA7 Then
 Public Function WriteToFile(ByVal hFile As LongPtr, buffer() As Byte, ByVal bytesToWrite As Long) As Boolean
