@@ -7,14 +7,11 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-' ============================================================================
-' Класс: CAsyncDownloadWorker
-' Назначение: Асинхронная загрузка одного файла с поддержкой докачки
-' ============================================================================
 Option Explicit
 
 Private WithEvents m_http As WinHttp.WinHttpRequest
 Attribute m_http.VB_VarHelpID = -1
+
 Private m_taskId As Long
 Private m_url As String
 Private m_destPath As String
@@ -23,36 +20,26 @@ Private m_manager As CAsyncDownloadManager
 Private m_fileWriter As CFileWriter
 Private m_lossCallback As StateLossCallback
 
-' Статистика
-Private m_totalBytes As Currency
 Private m_receivedBytes As Currency
 Private m_startOffset As Currency
 Private m_expectedSize As Currency
 
-' Таймауты
 Private m_resolveTimeout As Long
 Private m_connectTimeout As Long
 Private m_sendTimeout As Long
 Private m_receiveTimeout As Long
 Private m_bufferSize As Long
 
-' Детекция зависаний
-Private m_lastActivityTime As Double
-Private m_stuckCheckCount As Long
+Private m_lastActivityTime As Date
 Private m_maxRestarts As Integer
 Private m_restartCount As Integer
 
-' Флаги
 Private m_isCompleted As Boolean
 Private m_isCancelled As Boolean
 Private m_isHeadChecked As Boolean
+Private m_lastReportedPercent As Integer
+Private m_postProcessMacroName As String
 
-' Константы
-Private Const MIN_SPEED_BYTES_PER_SEC As Double = 1024
-Private Const STUCK_CHECK_INTERVAL_SEC As Double = 10
-Private Const MAX_STUCK_CHECKS As Long = 3
-
-' Константы уровней логирования
 Private Const LL_CRITICAL As Long = 1
 Private Const LL_ERROR As Long = 2
 Private Const LL_WARNING As Long = 3
@@ -61,14 +48,12 @@ Private Const LL_DEBUG As Long = 5
 
 Public Event WorkerComplete(ByVal TaskId As Long, ByVal success As Boolean)
 
-' ============================================================================
-' Инициализация
-' ============================================================================
 Public Sub Init(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String, _
                 ByVal callback As IDownloadCallback, ByVal bufferSize As Long, _
                 ByVal resolveTimeout As Long, ByVal connectTimeout As Long, _
                 ByVal sendTimeout As Long, ByVal receiveTimeout As Long, _
-                Optional ByVal maxRetries As Integer = 3)
+                Optional ByVal maxRetries As Integer = 3, _
+                Optional ByVal postProcessMacroName As String = "")
     
     m_taskId = TaskId
     m_url = url
@@ -82,12 +67,12 @@ Public Sub Init(ByVal TaskId As Long, ByVal url As String, ByVal destPath As Str
     m_maxRestarts = maxRetries
     m_restartCount = 0
     m_isHeadChecked = False
+    m_lastReportedPercent = -1
+    m_postProcessMacroName = postProcessMacroName
     
     Set m_http = New WinHttp.WinHttpRequest
-    
     Set m_lossCallback = New StateLossCallback
     m_lossCallback.InitByMacroName "OnWorkerLostState", m_taskId, m_url, m_destPath
-    
     ResetTracking
 End Sub
 
@@ -103,9 +88,6 @@ Public Property Get IsActive() As Boolean
     IsActive = (Not m_isCompleted) And (Not m_isCancelled)
 End Property
 
-' ============================================================================
-' Запуск загрузки
-' ============================================================================
 Public Sub Start()
     On Error GoTo ErrorHandler
     
@@ -116,41 +98,25 @@ Public Sub Start()
     m_receivedBytes = 0@
     m_expectedSize = 0@
     
-    ' Проверка существующего файла для докачки
     m_startOffset = GetFileSizeByPath(m_destPath)
-    If m_startOffset > 0 Then
-        LogMessage LL_INFO, "Найден существующий файл размером " & Format(m_startOffset, "#,##0") & " байт"
-    Else
-        m_startOffset = 0@
-    End If
+    If m_startOffset < 0 Then m_startOffset = 0@
     
-    ' HEAD запрос для получения размера файла на сервере (один раз)
     If Not m_isHeadChecked Then
         GetRemoteFileSize
         m_isHeadChecked = True
     End If
     
-    ' Проверка: файл уже полностью скачан?
-    If CheckAndCompleteIfFileExists() Then
-        Exit Sub  ' Файл уже есть, завершаем
-    End If
+    If CheckAndCompleteIfFileExists() Then Exit Sub
     
-    ' Запуск загрузки
     StartDownload
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка запуска: " & Err.Description, Err.Number
-    FailWithError "Ошибка запуска: " & Err.Description
+    LogMessage LL_ERROR, "������ �������: " & Err.Description, Err.Number
+    FailWithError "������ �������: " & Err.Description
 End Sub
 
-' ============================================================================
-' HEAD запрос для получения размера файла
-' ============================================================================
 Private Sub GetRemoteFileSize()
     On Error GoTo ErrorHandler
-    
-    LogMessage LL_DEBUG, "HEAD запрос для " & m_url
     
     Dim headHttp As WinHttp.WinHttpRequest
     Set headHttp = New WinHttp.WinHttpRequest
@@ -167,35 +133,23 @@ Private Sub GetRemoteFileSize()
         contentLength = headHttp.GetResponseHeader("Content-Length")
         On Error GoTo 0
         
-        If contentLength <> "" Then
+        If contentLength <> "" And IsNumeric(contentLength) Then
             m_expectedSize = CDec(contentLength)
-            LogMessage LL_INFO, "Размер файла на сервере: " & Format(m_expectedSize, "#,##0") & " байт"
-        Else
-            LogMessage LL_DEBUG, "HEAD запрос: Content-Length не получен"
         End If
-    Else
-        LogMessage LL_DEBUG, "HEAD запрос вернул статус: " & headHttp.status
     End If
-    
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_DEBUG, "HEAD запрос не удался: " & Err.Description
+    LogMessage LL_DEBUG, "HEAD ������ �� ������: " & Err.Description
 End Sub
 
-' ============================================================================
-' Основная загрузка
-' ============================================================================
 Private Sub StartDownload()
     On Error GoTo ErrorHandler
-    
-    LogMessage LL_DEBUG, "Запуск загрузки" & IIf(m_startOffset > 0, " (докачка)", "")
     
     m_http.SetTimeouts m_resolveTimeout, m_connectTimeout, m_sendTimeout, m_receiveTimeout
     m_http.Open "GET", m_url, True
     
     If m_startOffset > 0 Then
-        m_http.SetRequestHeader "Range", "bytes=" & Format(m_startOffset, "0") & "-"
+        m_http.SetRequestHeader "Range", "bytes=" & Format$(m_startOffset, "0") & "-"
     End If
     
     m_http.SetRequestHeader "Cache-Control", "no-cache"
@@ -204,92 +158,67 @@ Private Sub StartDownload()
     
     Set m_fileWriter = New CFileWriter
     If Not m_fileWriter.Init(m_destPath, m_bufferSize, m_startOffset > 0) Then
-        FailWithError "Не удалось открыть файл: " & m_destPath
+        FailWithError "�� ������� ������� ����: " & m_destPath
         Exit Sub
     End If
     
     m_http.Send
-    m_lastActivityTime = Timer
+    m_lastActivityTime = Now
     
     If Not m_callback Is Nothing Then
         m_callback.OnStart m_taskId, m_url, m_destPath
     End If
-    
-    LogMessage LL_INFO, "Загрузка запущена"
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка: " & Err.Description, Err.Number
-    FailWithError "Ошибка запуска: " & Err.Description
+    LogMessage LL_ERROR, "������: " & Err.Description, Err.Number
+    FailWithError "������ �������: " & Err.Description
 End Sub
 
-' ============================================================================
-' Проверка: файл уже скачан полностью?
-' Используется менеджером И вызывается из Start
-' ============================================================================
 Public Function CheckAndCompleteIfFileExists() As Boolean
     If m_isCompleted Then
         CheckAndCompleteIfFileExists = True
         Exit Function
     End If
     
-    ' Если размер на сервере неизвестен - не можем проверить
-    If m_expectedSize <= 0 Then
+    If m_expectedSize <= 0 Or m_startOffset <= 0 Then
         CheckAndCompleteIfFileExists = False
         Exit Function
     End If
     
-    ' Если файла нет на диске - не завершён
-    If m_startOffset <= 0 Then
-        CheckAndCompleteIfFileExists = False
-        Exit Function
-    End If
-    
-    ' Сравнение размеров
     If m_startOffset >= m_expectedSize Then
-        LogMessage LL_INFO, "Файл уже полностью скачан (" & Format(m_startOffset, "#,##0") & " из " & _
-                  Format(m_expectedSize, "#,##0") & " байт)"
         CompleteWithSuccess
         CheckAndCompleteIfFileExists = True
-    ElseIf m_startOffset > 0 And m_startOffset < m_expectedSize Then
-        LogMessage LL_INFO, "Файл скачан частично (" & Format(m_startOffset, "#,##0") & " из " & _
-                  Format(m_expectedSize, "#,##0") & " байт), продолжаем докачку"
-        CheckAndCompleteIfFileExists = False
     Else
         CheckAndCompleteIfFileExists = False
     End If
 End Function
 
-' ============================================================================
-' Успешное завершение
-' ============================================================================
 Private Sub CompleteWithSuccess()
     If m_isCompleted Then Exit Sub
-    
     m_isCompleted = True
     
+    On Error Resume Next
     If Not m_fileWriter Is Nothing Then
         m_fileWriter.CloseFile
         Set m_fileWriter = Nothing
     End If
+    On Error GoTo 0
     
     If Not m_callback Is Nothing Then
         m_callback.OnComplete m_taskId, m_url, m_destPath, True, ""
     End If
     
     If Not m_manager Is Nothing Then
-        m_manager.OnWorkerComplete m_taskId, True
+        m_manager.OnDownloadComplete m_taskId, m_destPath, m_postProcessMacroName
     End If
     
     RaiseEvent WorkerComplete(m_taskId, True)
+    m_lossCallback.Cancel
+    Set m_lossCallback = Nothing
 End Sub
 
-' ============================================================================
-' Завершение с ошибкой
-' ============================================================================
 Private Sub FailWithError(ByVal errorMsg As String)
     If m_isCompleted Then Exit Sub
-    
     m_isCompleted = True
     LogMessage LL_ERROR, errorMsg
     
@@ -305,15 +234,15 @@ Private Sub FailWithError(ByVal errorMsg As String)
     End If
     
     If Not m_manager Is Nothing Then
-        m_manager.OnWorkerComplete m_taskId, False
+        m_manager.FinalizeTask m_taskId, False
     End If
     
     RaiseEvent WorkerComplete(m_taskId, False)
+    m_lossCallback.Cancel
+    Set m_lossCallback = Nothing
+    
 End Sub
 
-' ============================================================================
-' Отмена
-' ============================================================================
 Public Sub Cancel()
     m_isCancelled = True
     On Error Resume Next
@@ -323,20 +252,18 @@ Public Sub Cancel()
     On Error GoTo 0
 End Sub
 
-' ============================================================================
-' Рестарт
-' ============================================================================
 Public Sub Restart()
     If m_restartCount >= m_maxRestarts Then
-        FailWithError "Превышено количество рестартов (" & m_maxRestarts & ")"
+        FailWithError "��������� ���������� ��������� (" & m_maxRestarts & ")"
         Exit Sub
     End If
     
     m_restartCount = m_restartCount + 1
-    LogMessage LL_WARNING, "Рестарт #" & m_restartCount
+    LogMessage LL_WARNING, "������� #" & m_restartCount
     
     On Error Resume Next
     If Not m_fileWriter Is Nothing Then
+        m_fileWriter.Flush
         m_fileWriter.CloseFile
         Set m_fileWriter = Nothing
     End If
@@ -349,57 +276,52 @@ Public Sub Restart()
     Set m_http = New WinHttp.WinHttpRequest
     m_isCompleted = False
     m_receivedBytes = 0@
-    m_stuckCheckCount = 0
+    m_lastReportedPercent = -1
+    m_isHeadChecked = False
     
     Start
 End Sub
 
-' ============================================================================
-' Проверка зависания
-' ============================================================================
 Public Function IsStuck() As Boolean
     If m_isCompleted Or m_isCancelled Then
         IsStuck = False
         Exit Function
     End If
     
-    Dim currentTime As Double
-    currentTime = Timer
-    If currentTime < m_lastActivityTime Then currentTime = currentTime + 86400
-    
-    Dim idleTime As Double
-    idleTime = currentTime - m_lastActivityTime
-    
-    If idleTime > (m_receiveTimeout / 1000) + 30 Then
-        LogMessage LL_WARNING, "Обнаружен простой: " & Format(idleTime, "0") & " сек"
-        IsStuck = True
+    If m_lastActivityTime = 0 Then
+        IsStuck = False
         Exit Function
     End If
     
-    IsStuck = False
+    Dim idleSeconds As Double
+    idleSeconds = (Now - m_lastActivityTime) * 86400#
+    If idleSeconds < 0 Then idleSeconds = idleSeconds + 86400#
+    
+    Dim timeoutSec As Double
+    timeoutSec = (m_receiveTimeout / 1000#) + 60
+    
+    If idleSeconds > timeoutSec Then
+        IsStuck = True
+    Else
+        IsStuck = False
+    End If
 End Function
 
-' ============================================================================
-' Логирование
-' ============================================================================
-Private Sub LogMessage(ByVal level As Long, ByVal message As String, Optional ByVal errorCode As Long = 0)
+Private Sub LogMessage(ByVal level As Long, ByVal message As String, _
+                       Optional ByVal errorCode As Long = 0)
     If Not m_callback Is Nothing Then
         m_callback.OnLog level, m_taskId, message, errorCode
     End If
 End Sub
 
 Private Sub ResetTracking()
-    m_stuckCheckCount = 0
-    m_lastActivityTime = 0
+    m_lastActivityTime = Now
+    m_lastReportedPercent = -1
 End Sub
 
-' ============================================================================
-' СОБЫТИЯ WINHTTP
-' ============================================================================
 
 Private Sub m_http_OnResponseDataAvailable(arrData() As Byte)
     If m_isCompleted Or m_isCancelled Then Exit Sub
-    
     On Error GoTo ErrorHandler
     
     If Not m_fileWriter Is Nothing Then
@@ -409,34 +331,27 @@ Private Sub m_http_OnResponseDataAvailable(arrData() As Byte)
     Dim chunkSize As Currency
     chunkSize = UBound(arrData) - LBound(arrData) + 1
     m_receivedBytes = m_receivedBytes + chunkSize
-    m_lastActivityTime = Timer
+    m_lastActivityTime = Now
     
-    ' Определение размера из ответа (если HEAD не дал результат)
-    If m_expectedSize = 0 Then
-        ParseContentSizeFromResponse
-    End If
+    If m_expectedSize = 0 Then ParseContentSizeFromResponse
     
-    ' Прогресс
     If Not m_callback Is Nothing Then
         Dim percent As Integer
         If m_expectedSize > 0 Then
-            percent = CInt((m_startOffset + m_receivedBytes) * 100 / m_expectedSize)
+            percent = CInt((m_startOffset + m_receivedBytes) * 100@ / m_expectedSize)
             If percent > 100 Then percent = 100
         Else
             percent = -1
         End If
         
-        Static lastPercent As Integer
-        If percent <> lastPercent And (percent Mod 5 = 0 Or percent = 100) Then
+        If percent >= 0 And percent <> m_lastReportedPercent And (percent Mod 5 = 0 Or percent = 100) Then
             m_callback.OnProgress m_taskId, m_startOffset + m_receivedBytes, m_expectedSize, percent
-            lastPercent = percent
+            m_lastReportedPercent = percent
         End If
     End If
-    
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка в OnResponseDataAvailable: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "������ � OnResponseDataAvailable: " & Err.Description, Err.Number
 End Sub
 
 Private Sub ParseContentSizeFromResponse()
@@ -446,71 +361,54 @@ Private Sub ParseContentSizeFromResponse()
     rangeHeader = m_http.GetResponseHeader("Content-Range")
     
     If rangeHeader <> "" Then
-        Dim slashPos As Integer
+        Dim slashPos As Long
         slashPos = InStrRev(rangeHeader, "/")
         If slashPos > 0 Then
-            m_expectedSize = CDec(Mid(rangeHeader, slashPos + 1))
+            Dim sizeStr As String
+            sizeStr = Mid$(rangeHeader, slashPos + 1)
+            If IsNumeric(sizeStr) Then m_expectedSize = CDec(sizeStr)
         End If
     Else
         Dim lenHeader As String
         lenHeader = m_http.GetResponseHeader("Content-Length")
-        If lenHeader <> "" Then
+        If lenHeader <> "" And IsNumeric(lenHeader) Then
             m_expectedSize = CDec(lenHeader) + m_startOffset
         End If
     End If
-    
-    If m_expectedSize > 0 Then
-        LogMessage LL_DEBUG, "Размер определён: " & Format(m_expectedSize, "#,##0") & " байт"
-    End If
-    
     On Error GoTo 0
 End Sub
 
 Private Sub m_http_OnResponseFinished()
     If m_isCompleted Or m_isCancelled Then Exit Sub
     
-    If Not m_fileWriter Is Nothing Then
-        m_fileWriter.Flush
-    End If
+    If Not m_fileWriter Is Nothing Then m_fileWriter.Flush
     
     Dim success As Boolean
     Dim errorMsg As String
     
     Select Case m_http.status
-        Case 200, 206
-            success = True
-        Case 416  ' Range Not Satisfiable - файл уже полностью скачан
-            success = True
-        Case 404
-            success = False
-            errorMsg = "Файл не найден (404)"
-        Case 403
-            success = False
-            errorMsg = "Доступ запрещён (403)"
-        Case Else
-            success = False
-            errorMsg = "HTTP " & m_http.status & ": " & m_http.StatusText
+        Case 200, 206, 416: success = True
+        Case 404: success = False: errorMsg = "���� �� ������ (404)"
+        Case 403: success = False: errorMsg = "������ �������� (403)"
+        Case Else: success = False: errorMsg = "HTTP " & m_http.status & ": " & m_http.StatusText
     End Select
     
     If success Then
-        ' Проверка размера (если известен)
         If m_expectedSize > 0 Then
             Dim actualSize As Currency
             actualSize = GetFileSizeByPath(m_destPath)
-            
-            If actualSize >= m_expectedSize - 1024 Then
+            If actualSize >= m_expectedSize - 1024@ Then
                 CompleteWithSuccess
             ElseIf m_restartCount < m_maxRestarts Then
-                LogMessage LL_WARNING, "Несоответствие размера, рестарт"
                 Restart
             Else
-                FailWithError "Несоответствие размера"
+                FailWithError "�������������� �������"
             End If
         Else
             If m_receivedBytes > 0 Or GetFileSizeByPath(m_destPath) > 0 Then
                 CompleteWithSuccess
             Else
-                FailWithError "Не получено данных"
+                FailWithError "�� �������� ������"
             End If
         End If
     Else
@@ -521,25 +419,30 @@ End Sub
 Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As String)
     If m_isCompleted Or m_isCancelled Then Exit Sub
     
-    LogMessage LL_ERROR, "WinHTTP ошибка " & ErrorNumber & ": " & ErrorDescription
+    LogMessage LL_ERROR, "WinHTTP ������ " & ErrorNumber & ": " & ErrorDescription
     
+    On Error Resume Next
     If Not m_fileWriter Is Nothing Then
+        m_fileWriter.Flush
         m_fileWriter.CloseFile
         Set m_fileWriter = Nothing
     End If
+    On Error GoTo 0
     
     If m_restartCount < m_maxRestarts Then
         Restart
     Else
-        FailWithError "WinHTTP ошибка после " & m_restartCount & " рестартов"
+        FailWithError "WinHTTP ������ ����� " & m_restartCount & " ���������"
     End If
 End Sub
 
 Private Sub Class_Terminate()
+    On Error Resume Next
     Cancel
     Set m_lossCallback = Nothing
     Set m_http = Nothing
     Set m_callback = Nothing
     Set m_manager = Nothing
+    On Error GoTo 0
 End Sub
 

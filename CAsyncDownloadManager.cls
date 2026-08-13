@@ -7,12 +7,9 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-' ============================================================================
-' РљР»Р°СЃСЃ: CAsyncDownloadManager
-' РќР°Р·РЅР°С‡РµРЅРёРµ: РЈРїСЂР°РІР»РµРЅРёРµ РѕС‡РµСЂРµРґСЊСЋ Р·Р°РіСЂСѓР·РѕРє СЃ РїСѓР»РѕРј РІРѕСЂРєРµСЂРѕРІ
-' ============================================================================
 Option Explicit
 
+Private m_netMonitor As CNetworkMonitor
 Private m_maxConcurrent As Long
 Private m_callback As IDownloadCallback
 Private m_pendingTasks As Collection
@@ -21,7 +18,6 @@ Private m_nextTaskId As Long
 Private m_isRunning As Boolean
 Private m_isPaused As Boolean
 
-' РљРѕРЅС„РёРіСѓСЂР°С†РёСЏ
 Private m_resolveTimeout As Long
 Private m_connectTimeout As Long
 Private m_sendTimeout As Long
@@ -30,26 +26,23 @@ Private m_bufferSize As Long
 Private m_checkIntervalSeconds As Double
 Private m_maxRetriesPerTask As Integer
 
-' РўР°Р№РјРµСЂ
 Private m_nextTimer As Date
 Private m_timerScheduled As Boolean
 Private m_timerCallbackName As String
 
-' РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ (РёРјРёС‚Р°С†РёСЏ)
-Private m_syncLock As Object
+Private m_postProcessMacroName As String
+Public m_postProcessQueue As Collection
 
-' РЎС‚Р°С‚РёСЃС‚РёРєР°
-Private m_completedCount As Long
-Private m_failedCount As Long
-Private m_totalTasks As Long
+Public m_completedCount As Long
+Public m_failedCount As Long
+Public m_totalTasks As Long
+
+Public m_xlApp As Application
 
 Public Event AllTasksCompleted()
 Public Event TaskCompleted(ByVal TaskId As Long, ByVal success As Boolean)
-Public Event ProgressUpdated(ByVal ActiveCount As Long, ByVal PendingCount As Long)
+Public Event ProgressUpdated()
 
-' ============================================================================
-' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ
-' ============================================================================
 Public Sub Init(ByVal maxConcurrent As Long, ByVal callback As IDownloadCallback, _
                 Optional ByVal resolveTimeoutMs As Long = 30000, _
                 Optional ByVal connectTimeoutMs As Long = 60000, _
@@ -57,19 +50,21 @@ Public Sub Init(ByVal maxConcurrent As Long, ByVal callback As IDownloadCallback
                 Optional ByVal receiveTimeoutMs As Long = 60000, _
                 Optional ByVal bufferSizeBytes As Long = 65536, _
                 Optional ByVal checkIntervalSec As Double = 5, _
-                Optional ByVal maxRetries As Integer = 3)
+                Optional ByVal maxRetries As Integer = 3, _
+                Optional ByVal maxNetworkUsagePercent As Long = 0, _
+                Optional ByVal networkInterfaceFilter As String = "", _
+                Optional ByVal postProcessMacroName As String = "")
     
     On Error GoTo ErrorHandler
     
     m_maxConcurrent = maxConcurrent
     If m_maxConcurrent < 1 Then m_maxConcurrent = 1
-    If m_maxConcurrent > 10 Then m_maxConcurrent = 10  ' РћРіСЂР°РЅРёС‡РµРЅРёРµ
+    If m_maxConcurrent > 10 Then m_maxConcurrent = 10
     
     Set m_callback = callback
     Set m_pendingTasks = New Collection
     Set m_activeWorkers = New Collection
-    Set m_syncLock = CreateObject("Scripting.Dictionary")
-    m_syncLock.Add "lock", 1
+    Set m_postProcessQueue = New Collection
     
     m_nextTaskId = 1
     m_isRunning = False
@@ -84,31 +79,53 @@ Public Sub Init(ByVal maxConcurrent As Long, ByVal callback As IDownloadCallback
     m_bufferSize = bufferSizeBytes
     m_checkIntervalSeconds = checkIntervalSec
     m_maxRetriesPerTask = maxRetries
+    m_postProcessMacroName = postProcessMacroName
+    
+    
+    If postProcessMacroName = "" Then
+        Set m_xlApp = CreateObject("Excel.application")
+        m_xlApp.Visible = 1
+        With m_xlApp.Workbooks.Add
+            .SaveAs Environ("tmp") & "\fileconverter.xlsm", 52, AddToMru:=False
+            With .VBProject.VBComponents.Add(vbext_ct_StdModule)
+                .Name = "modFileConverter"
+                With .CodeModule
+                    .InsertLines .CountOfLines + 1, "'test"
+                End With
+            End With
+            
+        End With
+    End If
     
     m_completedCount = 0
     m_failedCount = 0
     m_totalTasks = 0
     
-    LogMessage LL_INFO, "РњРµРЅРµРґР¶РµСЂ РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅ: maxConcurrent=" & m_maxConcurrent
+    Set m_netMonitor = New CNetworkMonitor
+    m_netMonitor.Init maxNetworkUsagePercent, networkInterfaceFilter
     
+    Dim limitStr As String
+    If maxNetworkUsagePercent > 0 Then
+        limitStr = maxNetworkUsagePercent & "%"
+    Else
+        limitStr = "Нет"
+    End If
+    
+    LogMessage LL_INFO, "Менеджер инициализирован: maxConcurrent=" & m_maxConcurrent & _
+                        ", Лимит сети=" & limitStr
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_CRITICAL, "РћС€РёР±РєР° РёРЅРёС†РёР°Р»РёР·Р°С†РёРё: " & Err.Description, Err.Number
+    LogMessage LL_CRITICAL, "Ошибка инициализации: " & Err.Description, Err.Number
 End Sub
 
-' ============================================================================
-' Р”РѕР±Р°РІР»РµРЅРёРµ Р·Р°РґР°С‡Рё
-' ============================================================================
 Public Sub AddTask(ByVal url As String, ByVal destPath As String)
     On Error GoTo ErrorHandler
     
     If url = "" Or destPath = "" Then
-        LogMessage LL_WARNING, "РџСЂРѕРїСѓС‰РµРЅР° Р·Р°РґР°С‡Р° СЃ РїСѓСЃС‚С‹Рј URL РёР»Рё РїСѓС‚С‘Рј"
+        LogMessage LL_WARNING, "Пропущена задача с пустым URL или путём"
         Exit Sub
     End If
     
-    ' РќРѕСЂРјР°Р»РёР·Р°С†РёСЏ РїСѓС‚Рё
     Dim normalizedPath As String
     normalizedPath = NormalizePath(destPath)
     
@@ -117,96 +134,59 @@ Public Sub AddTask(ByVal url As String, ByVal destPath As String)
     m_pendingTasks.Add taskData
     m_totalTasks = m_totalTasks + 1
     
-    LogMessage LL_DEBUG, "Р”РѕР±Р°РІР»РµРЅР° Р·Р°РґР°С‡Р° #" & m_nextTaskId & ": " & url
-    
     m_nextTaskId = m_nextTaskId + 1
-    
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_ERROR, "РћС€РёР±РєР° РґРѕР±Р°РІР»РµРЅРёСЏ Р·Р°РґР°С‡Рё: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "Ошибка добавления задачи: " & Err.Description, Err.Number
 End Sub
 
-' ============================================================================
-' Р”РѕР±Р°РІР»РµРЅРёРµ РЅРµСЃРєРѕР»СЊРєРёС… Р·Р°РґР°С‡ РёР· РјР°СЃСЃРёРІР°
-' ============================================================================
-Public Sub AddTasks(ByVal urls As Variant, ByVal destPaths As Variant)
-    Dim i As Long
-    Dim count As Long
-    
-    If IsArray(urls) And IsArray(destPaths) Then
-        count = UBound(urls) - LBound(urls) + 1
-        For i = 0 To count - 1
-            If i < UBound(destPaths) - LBound(destPaths) + 1 Then
-                AddTask urls(i), destPaths(i)
-            End If
-        Next i
-    End If
-End Sub
-
-' ============================================================================
-' Р—Р°РїСѓСЃРє Р·Р°РіСЂСѓР·РѕРє
-' ============================================================================
 Public Sub Start()
     If m_isRunning Then
-        LogMessage LL_WARNING, "РњРµРЅРµРґР¶РµСЂ СѓР¶Рµ Р·Р°РїСѓС‰РµРЅ"
+        LogMessage LL_WARNING, "Менеджер уже запущен"
         Exit Sub
     End If
     
     If m_pendingTasks.count = 0 And m_activeWorkers.count = 0 Then
-        LogMessage LL_WARNING, "РќРµС‚ Р·Р°РґР°С‡ РґР»СЏ РІС‹РїРѕР»РЅРµРЅРёСЏ"
+        LogMessage LL_WARNING, "Нет задач для выполнения"
         Exit Sub
     End If
     
     m_isRunning = True
     m_isPaused = False
     
-    LogMessage LL_INFO, "Р—Р°РїСѓСЃРє РјРµРЅРµРґР¶РµСЂР°. Р’СЃРµРіРѕ Р·Р°РґР°С‡: " & m_totalTasks
+    LogMessage LL_INFO, "Запуск менеджера. Всего задач: " & m_totalTasks
     
-    ' Р—Р°РїСѓСЃРє РЅР°С‡Р°Р»СЊРЅРѕР№ РїР°СЂС‚РёРё РІРѕСЂРєРµСЂРѕРІ
     Dim i As Long
     For i = 1 To m_maxConcurrent
         If Not LaunchNextWorker() Then Exit For
     Next i
     
-    ' Р—Р°РїСѓСЃРє С‚Р°Р№РјРµСЂР°
     ScheduleTimer
 End Sub
 
-' ============================================================================
-' РџР°СѓР·Р°
-' ============================================================================
 Public Sub Pause()
     If Not m_isRunning Then Exit Sub
     m_isPaused = True
-    LogMessage LL_INFO, "РџРѕСЃС‚Р°РІР»РµРЅ РЅР° РїР°СѓР·Сѓ"
+    LogMessage LL_INFO, "Поставлен на паузу"
 End Sub
 
-' ============================================================================
-' Р’РѕР·РѕР±РЅРѕРІР»РµРЅРёРµ
-' ============================================================================
 Public Sub Resume_()
     If Not m_isRunning Then Exit Sub
     m_isPaused = False
-    LogMessage LL_INFO, "Р’РѕР·РѕР±РЅРѕРІР»С‘РЅ"
+    LogMessage LL_INFO, "Возобновлён"
     
-    ' Р—Р°РїРѕР»РЅРµРЅРёРµ РїСѓР»Р°
     Dim i As Long
-    For i = m_activeWorkers.count To m_maxConcurrent - 1
+    For i = m_activeWorkers.count + 1 To m_maxConcurrent
         If Not LaunchNextWorker() Then Exit For
     Next i
 End Sub
 
-' ============================================================================
-' РћСЃС‚Р°РЅРѕРІРєР° РІСЃРµС… Р·Р°РіСЂСѓР·РѕРє
-' ============================================================================
 Public Sub StopAll()
-    LogMessage LL_INFO, "РћСЃС‚Р°РЅРѕРІРєР° РІСЃРµС… Р·Р°РіСЂСѓР·РѕРє"
+    LogMessage LL_INFO, "Остановка всех загрузок"
     
     m_isRunning = False
     m_isPaused = False
     
-    ' РћС‚РјРµРЅР° РІСЃРµС… Р°РєС‚РёРІРЅС‹С… РІРѕСЂРєРµСЂРѕРІ
     Dim worker As CAsyncDownloadWorker
     For Each worker In m_activeWorkers
         On Error Resume Next
@@ -214,38 +194,38 @@ Public Sub StopAll()
         On Error GoTo 0
     Next worker
     
-    ' РћС‡РёСЃС‚РєР° РєРѕР»Р»РµРєС†РёР№
     Set m_activeWorkers = New Collection
     Set m_pendingTasks = New Collection
     
-    ' РћС‚РјРµРЅР° С‚Р°Р№РјРµСЂР°
-    CancelTimer
+    ' Отменяем все задачи постобработки
+    On Error Resume Next
+    While m_postProcessQueue.count > 0
+        Dim cb As StateLossCallback
+        Set cb = m_postProcessQueue.item(1)
+        m_postProcessQueue.Remove 1
+        Set cb = Nothing
+    Wend
+    On Error GoTo 0
     
-    LogMessage LL_INFO, "Р’СЃРµ Р·Р°РіСЂСѓР·РєРё РѕСЃС‚Р°РЅРѕРІР»РµРЅС‹"
+    CancelTimer
+    LogMessage LL_INFO, "Все загрузки остановлены"
 End Sub
 
-' ============================================================================
-' РџР»Р°РЅРёСЂРѕРІР°РЅРёРµ С‚Р°Р№РјРµСЂР°
-' ============================================================================
 Private Sub ScheduleTimer()
-    If Not m_isRunning Then Exit Sub
-    If m_timerScheduled Then Exit Sub
+    If Not m_isRunning Or m_timerScheduled Then Exit Sub
     
-    m_nextTimer = Now + m_checkIntervalSeconds / 86400
+    m_nextTimer = Now + m_checkIntervalSeconds / 86400#
     m_timerScheduled = True
     
     On Error Resume Next
     Application.OnTime m_nextTimer, m_timerCallbackName, , True
     If Err.Number <> 0 Then
-        LogMessage LL_ERROR, "РћС€РёР±РєР° РїР»Р°РЅРёСЂРѕРІР°РЅРёСЏ С‚Р°Р№РјРµСЂР°: " & Err.Description, Err.Number
+        LogMessage LL_ERROR, "Ошибка планирования таймера: " & Err.Description, Err.Number
         m_timerScheduled = False
     End If
     On Error GoTo 0
 End Sub
 
-' ============================================================================
-' РћС‚РјРµРЅР° С‚Р°Р№РјРµСЂР°
-' ============================================================================
 Private Sub CancelTimer()
     If m_timerScheduled Then
         On Error Resume Next
@@ -255,54 +235,66 @@ Private Sub CancelTimer()
     End If
 End Sub
 
-' ============================================================================
-' РџСѓР±Р»РёС‡РЅС‹Р№ РјРµС‚РѕРґ РґР»СЏ РІС‹Р·РѕРІР° РїРѕ С‚Р°Р№РјРµСЂСѓ (РІС‹Р·С‹РІР°РµС‚СЃСЏ РёР· Module1)
-' ============================================================================
 Public Sub TimerCheck()
     If Not m_isRunning Then Exit Sub
-    
     On Error GoTo ErrorHandler
     
-    ' РЎР±СЂРѕСЃ С„Р»Р°РіР° РґР»СЏ СЃР»РµРґСѓСЋС‰РµРіРѕ РїР»Р°РЅРёСЂРѕРІР°РЅРёСЏ
     m_timerScheduled = False
     
-    ' РџСЂРѕРІРµСЂРєР° Р·Р°РІРёСЃС€РёС… РІРѕСЂРєРµСЂРѕРІ
     CheckStuckWorkers
-    
-    ' РџСЂРѕРІРµСЂРєР° Р·Р°РІРµСЂС€С‘РЅРЅС‹С… (С‚РёС…РёС…) РІРѕСЂРєРµСЂРѕРІ
     CheckSilentCompletion
     
-    ' Р—Р°РїСѓСЃРє РЅРѕРІС‹С… РІРѕСЂРєРµСЂРѕРІ РїСЂРё РЅР°Р»РёС‡РёРё РјРµСЃС‚Р°
-    If Not m_isPaused Then
-        Dim i As Long
-        For i = m_activeWorkers.count To m_maxConcurrent - 1
-            If Not LaunchNextWorker() Then Exit For
-        Next i
+    If m_postProcessQueue.count > 0 Then
+        Dim cb As StateLossCallback
+        Set cb = m_postProcessQueue.item(1)
+        m_postProcessQueue.Remove 1
+        Set cb = Nothing
     End If
     
-    ' РџСЂРѕРІРµСЂРєР° РїРѕР»РЅРѕРіРѕ Р·Р°РІРµСЂС€РµРЅРёСЏ
-    If m_activeWorkers.count = 0 And m_pendingTasks.count = 0 And m_isRunning Then
+    CheckAsyncMarkers
+    
+    If Not m_isPaused Then
+        Dim canLaunchNew As Boolean
+        canLaunchNew = True
+        
+        If Not m_netMonitor Is Nothing And m_netMonitor.MaxUsagePercent > 0 Then
+            m_netMonitor.Refresh
+            If m_netMonitor.IsOverLimit Then
+                canLaunchNew = False
+                LogMessage LL_DEBUG, "Сеть перегружена: " & Format(m_netMonitor.CurrentUsagePercent, "0.0") & _
+                                   "% (Лимит: " & m_netMonitor.MaxUsagePercent & "%). Ожидание..."
+            End If
+        End If
+        
+        If canLaunchNew Then
+            Dim i As Long
+            For i = m_activeWorkers.count + 1 To m_maxConcurrent
+                If Not LaunchNextWorker() Then Exit For
+            Next i
+        End If
+    End If
+    
+    ' Проверка завершения всех задач (включая постобработку)
+    Dim pendingPostProcess As Long
+    pendingPostProcess = 0
+    If Not g_pendingAsyncMarkers Is Nothing Then pendingPostProcess = g_pendingAsyncMarkers.count
+    
+    If m_activeWorkers.count = 0 And m_pendingTasks.count = 0 And _
+       m_postProcessQueue.count = 0 And pendingPostProcess = 0 And m_isRunning Then
         m_isRunning = False
-        LogMessage LL_INFO, "Р’СЃРµ Р·Р°РґР°С‡Рё Р·Р°РІРµСЂС€РµРЅС‹. РЈСЃРїРµС€РЅРѕ: " & m_completedCount & ", РћС€РёР±РѕРє: " & m_failedCount
         RaiseEvent AllTasksCompleted
     End If
     
-    ' РЈРІРµРґРѕРјР»РµРЅРёРµ Рѕ РїСЂРѕРіСЂРµСЃСЃРµ
-    RaiseEvent ProgressUpdated(m_activeWorkers.count, m_pendingTasks.count)
-    
-    ' РџР»Р°РЅРёСЂРѕРІР°РЅРёРµ СЃР»РµРґСѓСЋС‰РµРіРѕ РІС‹Р·РѕРІР°
+    RaiseEvent ProgressUpdated
     ScheduleTimer
-    
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_ERROR, "РћС€РёР±РєР° РІ TimerCheck: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "Ошибка в TimerCheck: " & Err.Description, Err.Number
+    On Error Resume Next
     ScheduleTimer
+    On Error GoTo 0
 End Sub
 
-' ============================================================================
-' РџСЂРѕРІРµСЂРєР° Р·Р°РІРёСЃС€РёС… РІРѕСЂРєРµСЂРѕРІ
-' ============================================================================
 Private Sub CheckStuckWorkers()
     Dim worker As CAsyncDownloadWorker
     Dim keys As Collection
@@ -310,7 +302,6 @@ Private Sub CheckStuckWorkers()
     
     Set keys = New Collection
     
-    ' РЎР±РѕСЂ РєР»СЋС‡РµР№ (Р±РµР·РѕРїР°СЃРЅР°СЏ РёС‚РµСЂР°С†РёСЏ)
     On Error Resume Next
     For Each worker In m_activeWorkers
         keys.Add CStr(worker.TaskId)
@@ -319,21 +310,20 @@ Private Sub CheckStuckWorkers()
     
     For Each key In keys
         On Error Resume Next
-        Set worker = m_activeWorkers(key)
+        Set worker = m_activeWorkers(CStr(key))
         On Error GoTo 0
         
         If Not worker Is Nothing Then
+            On Error Resume Next
             If worker.IsStuck() Then
-                LogMessage LL_WARNING, "РћР±РЅР°СЂСѓР¶РµРЅ Р·Р°РІРёСЃС€РёР№ РІРѕСЂРєРµСЂ #" & key & ", СЂРµСЃС‚Р°СЂС‚"
+                LogMessage LL_WARNING, "Обнаружен зависший воркер #" & key & ", рестарт"
                 worker.Restart
             End If
+            On Error GoTo 0
         End If
     Next key
 End Sub
 
-' ============================================================================
-' РџСЂРѕРІРµСЂРєР° "С‚РёС…РѕРіРѕ" Р·Р°РІРµСЂС€РµРЅРёСЏ (РєРѕРіРґР° СЃРѕР±С‹С‚РёРµ РЅРµ РїСЂРёС€Р»Рѕ)
-' ============================================================================
 Private Sub CheckSilentCompletion()
     Dim worker As CAsyncDownloadWorker
     Dim keys As Collection
@@ -349,102 +339,116 @@ Private Sub CheckSilentCompletion()
     
     For Each key In keys
         On Error Resume Next
-        Set worker = m_activeWorkers(key)
+        Set worker = m_activeWorkers(CStr(key))
         On Error GoTo 0
         
         If Not worker Is Nothing Then
+            On Error Resume Next
             If worker.CheckAndCompleteIfFileExists() Then
-                ' Р’РѕСЂРєРµСЂ СЃР°Рј РІС‹Р·РѕРІРµС‚ OnWorkerComplete
-                LogMessage LL_INFO, "РўРёС…РѕРµ Р·Р°РІРµСЂС€РµРЅРёРµ Р·Р°РґР°С‡Рё #" & key
+                LogMessage LL_INFO, "Тихое завершение задачи #" & key
             End If
+            On Error GoTo 0
         End If
     Next key
 End Sub
 
-' ============================================================================
-' Р—Р°РїСѓСЃРє СЃР»РµРґСѓСЋС‰РµРіРѕ РІРѕСЂРєРµСЂР° РёР· РѕС‡РµСЂРµРґРё
-' ============================================================================
 Private Function LaunchNextWorker() As Boolean
-    If m_isPaused Then
+    If m_isPaused Or m_pendingTasks.count = 0 Then
         LaunchNextWorker = False
         Exit Function
     End If
     
-    If m_pendingTasks.count = 0 Then
-        LaunchNextWorker = False
-        Exit Function
-    End If
-    
-    ' Р‘РµР·РѕРїР°СЃРЅРѕРµ РёР·РІР»РµС‡РµРЅРёРµ
     Dim taskData As Variant
     On Error Resume Next
-    taskData = m_pendingTasks.Item(1)
+    taskData = m_pendingTasks.item(1)
     If Err.Number <> 0 Then
         LaunchNextWorker = False
         Exit Function
     End If
-    m_pendingTasks.Remove 1
     On Error GoTo 0
     
     Dim TaskId As Long: TaskId = taskData(0)
     Dim url As String: url = taskData(1)
     Dim destPath As String: destPath = taskData(2)
     
-    ' РЎРѕР·РґР°РЅРёРµ Рё Р·Р°РїСѓСЃРє РІРѕСЂРєРµСЂР°
     Dim worker As CAsyncDownloadWorker
     Set worker = New CAsyncDownloadWorker
     
-    ' Р”РѕР±Р°РІР»РµРЅРёРµ РІ Р°РєС‚РёРІРЅС‹Рµ
+    worker.Init TaskId, url, destPath, m_callback, m_bufferSize, _
+                m_resolveTimeout, m_connectTimeout, m_sendTimeout, m_receiveTimeout, _
+                m_maxRetriesPerTask, m_postProcessMacroName
+    worker.SetManager Me
+    
     On Error Resume Next
+    m_pendingTasks.Remove 1
     m_activeWorkers.Add worker, CStr(TaskId)
     On Error GoTo 0
     
-    worker.Init TaskId, url, destPath, m_callback, m_bufferSize, _
-                m_resolveTimeout, m_connectTimeout, m_sendTimeout, m_receiveTimeout, _
-                m_maxRetriesPerTask
-    worker.SetManager Me
     worker.Start
-    
-    
-    
-    LogMessage LL_DEBUG, "Р—Р°РїСѓС‰РµРЅ РІРѕСЂРєРµСЂ #" & TaskId & " (Р°РєС‚РёРІРЅРѕ: " & m_activeWorkers.count & ")"
-    
     LaunchNextWorker = True
 End Function
 
 ' ============================================================================
-' РћР±СЂР°Р±РѕС‚РєР° Р·Р°РІРµСЂС€РµРЅРёСЏ РІРѕСЂРєРµСЂР°
+' Вызывается воркером сразу после скачивания файла
+' Освобождает слот для новых загрузок, не дожидаясь постобработки!
 ' ============================================================================
-Public Sub OnWorkerComplete(ByVal TaskId As Long, ByVal success As Boolean)
+Public Sub OnDownloadComplete(ByVal TaskId As Long, ByVal destPath As String, ByVal macroName As String)
     On Error GoTo ErrorHandler
     
-    ' РћР±РЅРѕРІР»РµРЅРёРµ СЃС‚Р°С‚РёСЃС‚РёРєРё
+    LogMessage LL_INFO, "OnDownloadComplete: TaskId='" & TaskId & ",  macroName='" & macroName & "', destPath='" & destPath & "'"
+    
+    ' 1. Мгновенно освобождаем слот и запускаем следующую задачу
+    On Error Resume Next
+    m_activeWorkers.Remove CStr(TaskId)
+    On Error GoTo 0
+    
+    Dim i As Long
+    For i = m_activeWorkers.count + 1 To m_maxConcurrent
+        If Not LaunchNextWorker() Then Exit For
+    Next i
+    
+    ' 2. Если нужна постобработка - ставим в очередь через StateLossCallback
+    If macroName <> "" And destPath <> "" Then
+        Dim cb As StateLossCallback
+        Set cb = New StateLossCallback
+        cb.InitByMacroName "ExecutePostProcess", TaskId, destPath, macroName
+        
+        m_postProcessQueue.Add cb
+        LogMessage LL_INFO, "Задача #" & TaskId & " скачана. Ожидает постобработки."
+    Else
+        FinalizeTask TaskId, True
+    End If
+    Exit Sub
+ErrorHandler:
+    LogMessage LL_ERROR, "Ошибка в OnDownloadComplete: " & Err.Description, Err.Number
+    FinalizeTask TaskId, False
+End Sub
+
+' ============================================================================
+' Финализация задачи (вызывается после успешной постобработки или при ошибке)
+' ============================================================================
+Public Sub FinalizeTask(ByVal TaskId As Long, ByVal success As Boolean)
+    On Error GoTo ErrorHandler
+    
     If success Then
         m_completedCount = m_completedCount + 1
     Else
         m_failedCount = m_failedCount + 1
     End If
     
-    ' РЈРґР°Р»РµРЅРёРµ РёР· Р°РєС‚РёРІРЅС‹С…
-    On Error Resume Next
-    m_activeWorkers.Remove CStr(TaskId)
-    On Error GoTo 0
-    
-    LogMessage LL_DEBUG, "Р—Р°РІРµСЂС€С‘РЅ РІРѕСЂРєРµСЂ #" & TaskId & ", СѓСЃРїРµС…=" & success & " (Р°РєС‚РёРІРЅРѕ: " & m_activeWorkers.count & ")"
-    
+    LogMessage LL_DEBUG, "Финализация задачи #" & TaskId & ", успех=" & success
     RaiseEvent TaskCompleted(TaskId, success)
-    
     Exit Sub
-    
 ErrorHandler:
-    LogMessage LL_ERROR, "РћС€РёР±РєР° РІ OnWorkerComplete: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "Ошибка в FinalizeTask: " & Err.Description, Err.Number
 End Sub
 
-' ============================================================================
-' РЎРІРѕР№СЃС‚РІР°
-' ============================================================================
 Public Property Get IsBusy() As Boolean
-    IsBusy = (m_activeWorkers.count > 0) Or (m_pendingTasks.count > 0)
+    Dim pendingPostProcess As Long
+    pendingPostProcess = 0
+    If Not g_pendingAsyncMarkers Is Nothing Then pendingPostProcess = g_pendingAsyncMarkers.count
+    IsBusy = (m_activeWorkers.count > 0) Or (m_pendingTasks.count > 0) Or _
+             (m_postProcessQueue.count > 0) Or (pendingPostProcess > 0)
 End Property
 
 Public Property Get IsRunning() As Boolean
@@ -467,20 +471,20 @@ Public Property Get FailedCount() As Long
     FailedCount = m_failedCount
 End Property
 
-' ============================================================================
-' Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ РјРµС‚РѕРґС‹
-' ============================================================================
 Private Function NormalizePath(ByVal filePath As String) As String
     Dim result As String
-    result = Trim(filePath)
+    result = Trim$(filePath)
     
-    ' Р—Р°РјРµРЅР° СЃР»РµС€РµР№
-    result = Replace(result, "/", "\")
+    Dim isUNC As Boolean
+    isUNC = (Left$(result, 2) = "\\")
     
-    ' РЈРґР°Р»РµРЅРёРµ Р»РёС€РЅРёС… РѕР±СЂР°С‚РЅС‹С… СЃР»РµС€РµР№
+    result = Replace$(result, "/", "\")
+    
     Do While InStr(result, "\\") > 0
-        result = Replace(result, "\\", "\")
+        result = Replace$(result, "\\", "\")
     Loop
+    
+    If isUNC And Left$(result, 2) <> "\\" Then result = "\" & result
     
     NormalizePath = result
 End Function
@@ -492,14 +496,26 @@ Private Sub LogMessage(ByVal level As Long, ByVal message As String, _
     End If
 End Sub
 
-' ============================================================================
-' Р”РµСЃС‚СЂСѓРєС‚РѕСЂ
-' ============================================================================
 Private Sub Class_Terminate()
-    StopAll
+    On Error Resume Next
+    If m_timerScheduled Then
+        Application.OnTime m_nextTimer, m_timerCallbackName, , False
+    End If
+    m_isRunning = False
+    
+    Dim worker As CAsyncDownloadWorker
+    For Each worker In m_activeWorkers
+        worker.Cancel
+    Next worker
+    
+    Set m_netMonitor = Nothing
     Set m_pendingTasks = Nothing
     Set m_activeWorkers = Nothing
+    Set m_postProcessQueue = Nothing
     Set m_callback = Nothing
-    Set m_syncLock = Nothing
+    
+    'm_xlApp.Quit
+    
+    On Error GoTo 0
 End Sub
 
