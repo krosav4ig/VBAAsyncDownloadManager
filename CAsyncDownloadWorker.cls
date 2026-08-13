@@ -111,8 +111,8 @@ Public Sub Start()
     StartDownload
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка запуска: " & Err.Description, Err.Number
-    FailWithError "Ошибка запуска: " & Err.Description
+    LogMessage LL_ERROR, "РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: " & Err.Description, Err.Number
+    FailWithError "РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: " & Err.Description
 End Sub
 
 Private Sub GetRemoteFileSize()
@@ -139,7 +139,7 @@ Private Sub GetRemoteFileSize()
     End If
     Exit Sub
 ErrorHandler:
-    LogMessage LL_DEBUG, "HEAD запрос не удался: " & Err.Description
+    LogMessage LL_DEBUG, "HEAD Р·Р°РїСЂРѕСЃ РЅРµ СѓРґР°Р»СЃСЏ: " & Err.Description
 End Sub
 
 Private Sub StartDownload()
@@ -158,7 +158,7 @@ Private Sub StartDownload()
     
     Set m_fileWriter = New CFileWriter
     If Not m_fileWriter.Init(m_destPath, m_bufferSize, m_startOffset > 0) Then
-        FailWithError "Не удалось открыть файл: " & m_destPath
+        FailWithError "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р»: " & m_destPath
         Exit Sub
     End If
     
@@ -170,8 +170,8 @@ Private Sub StartDownload()
     End If
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка: " & Err.Description, Err.Number
-    FailWithError "Ошибка запуска: " & Err.Description
+    LogMessage LL_ERROR, "РћС€РёР±РєР°: " & Err.Description, Err.Number
+    FailWithError "РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: " & Err.Description
 End Sub
 
 Public Function CheckAndCompleteIfFileExists() As Boolean
@@ -254,12 +254,12 @@ End Sub
 
 Public Sub Restart()
     If m_restartCount >= m_maxRestarts Then
-        FailWithError "Превышено количество рестартов (" & m_maxRestarts & ")"
+        FailWithError "РџСЂРµРІС‹С€РµРЅРѕ РєРѕР»РёС‡РµСЃС‚РІРѕ СЂРµСЃС‚Р°СЂС‚РѕРІ (" & m_maxRestarts & ")"
         Exit Sub
     End If
     
     m_restartCount = m_restartCount + 1
-    LogMessage LL_WARNING, "Рестарт #" & m_restartCount
+    LogMessage LL_WARNING, "Р РµСЃС‚Р°СЂС‚ #" & m_restartCount
     
     On Error Resume Next
     If Not m_fileWriter Is Nothing Then
@@ -351,7 +351,7 @@ Private Sub m_http_OnResponseDataAvailable(arrData() As Byte)
     End If
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка в OnResponseDataAvailable: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "РћС€РёР±РєР° РІ OnResponseDataAvailable: " & Err.Description, Err.Number
 End Sub
 
 Private Sub ParseContentSizeFromResponse()
@@ -388,8 +388,8 @@ Private Sub m_http_OnResponseFinished()
     
     Select Case m_http.status
         Case 200, 206, 416: success = True
-        Case 404: success = False: errorMsg = "Файл не найден (404)"
-        Case 403: success = False: errorMsg = "Доступ запрещён (403)"
+        Case 404: success = False: errorMsg = "Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ (404)"
+        Case 403: success = False: errorMsg = "Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ (403)"
         Case Else: success = False: errorMsg = "HTTP " & m_http.status & ": " & m_http.StatusText
     End Select
     
@@ -402,13 +402,13 @@ Private Sub m_http_OnResponseFinished()
             ElseIf m_restartCount < m_maxRestarts Then
                 Restart
             Else
-                FailWithError "Несоответствие размера"
+                FailWithError "РќРµСЃРѕРѕС‚РІРµС‚СЃС‚РІРёРµ СЂР°Р·РјРµСЂР°"
             End If
         Else
             If m_receivedBytes > 0 Or GetFileSizeByPath(m_destPath) > 0 Then
                 CompleteWithSuccess
             Else
-                FailWithError "Не получено данных"
+                FailWithError "РќРµ РїРѕР»СѓС‡РµРЅРѕ РґР°РЅРЅС‹С…"
             End If
         End If
     Else
@@ -419,7 +419,7 @@ End Sub
 Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As String)
     If m_isCompleted Or m_isCancelled Then Exit Sub
     
-    LogMessage LL_ERROR, "WinHTTP ошибка " & ErrorNumber & ": " & ErrorDescription
+    LogMessage LL_ERROR, "WinHTTP РѕС€РёР±РєР° " & ErrorNumber & ": " & ErrorDescription
     
     On Error Resume Next
     If Not m_fileWriter Is Nothing Then
@@ -432,7 +432,7 @@ Private Sub m_http_OnError(ByVal ErrorNumber As Long, ByVal ErrorDescription As 
     If m_restartCount < m_maxRestarts Then
         Restart
     Else
-        FailWithError "WinHTTP ошибка после " & m_restartCount & " рестартов"
+        FailWithError "WinHTTP РѕС€РёР±РєР° РїРѕСЃР»Рµ " & m_restartCount & " СЂРµСЃС‚Р°СЂС‚РѕРІ"
     End If
 End Sub
 

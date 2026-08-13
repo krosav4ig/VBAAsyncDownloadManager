@@ -22,17 +22,17 @@ End Sub
 
 Private Sub m_manager_AllTasksCompleted()
     If Not m_logger Is Nothing Then
-        m_logger.LogMessage LL_INFO, 0, "[EVENT] Все задачи завершены. Успешно: " & _
-            m_manager.CompletedCount & ", Ошибок: " & m_manager.FailedCount
+        m_logger.LogMessage LL_INFO, 0, "[EVENT] Р’СЃРµ Р·Р°РґР°С‡Рё Р·Р°РІРµСЂС€РµРЅС‹. РЈСЃРїРµС€РЅРѕ: " & _
+            m_manager.CompletedCount & ", РћС€РёР±РѕРє: " & m_manager.FailedCount
     End If
 End Sub
 
 Private Sub m_manager_TaskCompleted(ByVal TaskId As Long, ByVal success As Boolean)
     If Not m_logger Is Nothing Then
         If success Then
-            m_logger.LogMessage LL_DEBUG, TaskId, "[EVENT] Задача успешно завершена"
+            m_logger.LogMessage LL_DEBUG, TaskId, "[EVENT] Р—Р°РґР°С‡Р° СѓСЃРїРµС€РЅРѕ Р·Р°РІРµСЂС€РµРЅР°"
         Else
-            m_logger.LogMessage LL_WARNING, TaskId, "[EVENT] Задача завершена с ошибкой"
+            m_logger.LogMessage LL_WARNING, TaskId, "[EVENT] Р—Р°РґР°С‡Р° Р·Р°РІРµСЂС€РµРЅР° СЃ РѕС€РёР±РєРѕР№"
         End If
     End If
 End Sub
@@ -43,11 +43,11 @@ Private Sub m_manager_ProgressUpdated()
         postProcCount = 0
         If Not g_pendingAsyncMarkers Is Nothing Then postProcCount = g_pendingAsyncMarkers.count
         
-        m_logger.LogMessage LL_INFO, 0, "[EVENT] Активно: " & m_manager.ActiveCount & _
-            " | Ожидает: " & m_manager.PendingCount & _
-            " | Готово: " & m_manager.CompletedCount & _
-            " | Ошибок: " & m_manager.FailedCount & _
-            " | Постобр: " & postProcCount
+        m_logger.LogMessage LL_INFO, 0, "[EVENT] РђРєС‚РёРІРЅРѕ: " & m_manager.ActiveCount & _
+            " | РћР¶РёРґР°РµС‚: " & m_manager.PendingCount & _
+            " | Р“РѕС‚РѕРІРѕ: " & m_manager.CompletedCount & _
+            " | РћС€РёР±РѕРє: " & m_manager.FailedCount & _
+            " | РџРѕСЃС‚РѕР±СЂ: " & postProcCount
     End If
 End Sub
 

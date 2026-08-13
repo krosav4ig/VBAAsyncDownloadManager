@@ -7,10 +7,10 @@ Option Explicit
     Public Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
 #End If
 
-Private Const SOURCE_SHEET_NAME As String = "Лист1"
-Private Const SOURCE_TABLE_NAME As String = "Ссылки"
-Private Const URL_COLUMN_NAME As String = "Ссылка"
-Private Const PATH_COLUMN_NAME As String = "Путь для сохранения"
+Private Const SOURCE_SHEET_NAME As String = "Р›РёСЃС‚1" 
+Private Const SOURCE_TABLE_NAME As String = "РЎСЃС‹Р»РєРё"
+Private Const URL_COLUMN_NAME As String = "РЎСЃС‹Р»РєР°"
+Private Const PATH_COLUMN_NAME As String = "РџСѓС‚СЊ РґР»СЏ СЃРѕС…СЂР°РЅРµРЅРёСЏ"
 
 Public g_manager As CAsyncDownloadManager
 Public g_logger As CDownloadLogger
@@ -18,7 +18,7 @@ Public g_managerEvents As CManagerEvents
 Public g_criticalErrorLogPath As String
 
 ' ============================================================================
-' Глобальный таймер (вызывается менеджером через Application.OnTime)
+' Р“Р»РѕР±Р°Р»СЊРЅС‹Р№ С‚Р°Р№РјРµСЂ (РІС‹Р·С‹РІР°РµС‚СЃСЏ РјРµРЅРµРґР¶РµСЂРѕРј С‡РµСЂРµР· Application.OnTime)
 ' ============================================================================
 Public Sub CAsyncDownloadManager_TimerCheck()
     On Error GoTo ErrorHandler
@@ -40,7 +40,7 @@ Sub DownloadCSV()
     StartBatchDownload 4, "ConvertXlsxToCsv_Async"
 End Sub
 ' ============================================================================
-' Основная процедура запуска
+' РћСЃРЅРѕРІРЅР°СЏ РїСЂРѕС†РµРґСѓСЂР° Р·Р°РїСѓСЃРєР°
 ' ============================================================================
 Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO, _
                               Optional ByVal postProcessMacroName As String = "", Optional maxConcurrent = 3)
@@ -55,13 +55,13 @@ Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO, _
     g_logger.Init wsLog, ThisWorkbook.Path & "\download_log.txt", logLevel
     g_logger.ReloadDictionary
     
-    g_logger.LogMessage LL_INFO, 0, "=== НАЧАЛО СЕССИИ ЗАГРУЗКИ ==="
+    g_logger.LogMessage LL_INFO, 0, "=== РќРђР§РђР›Рћ РЎР•РЎРЎРР Р—РђР“Р РЈР—РљР ==="
     
-    ' Инициализация постобработки
+    ' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєРё
     InitPostProcess
     
     Set g_manager = New CAsyncDownloadManager
-    g_manager.Init maxConcurrent:=3, callback:=g_logger, _
+    g_manager.Init maxConcurrent:=maxConcurrent, callback:=g_logger, _
                    resolveTimeoutMs:=30000, connectTimeoutMs:=60000, _
                    sendTimeoutMs:=30000, receiveTimeoutMs:=60000, _
                    bufferSizeBytes:=131072, checkIntervalSec:=3, _
@@ -76,13 +76,13 @@ Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO, _
     taskCount = LoadTasksFromTable()
     
     If taskCount = 0 Then
-        g_logger.LogMessage LL_WARNING, 0, "Нет задач для загрузки"
-        MsgBox "Нет задач для загрузки. Проверьте таблицу '" & SOURCE_TABLE_NAME & "'.", vbExclamation
+        g_logger.LogMessage LL_WARNING, 0, "РќРµС‚ Р·Р°РґР°С‡ РґР»СЏ Р·Р°РіСЂСѓР·РєРё"
+        MsgBox "РќРµС‚ Р·Р°РґР°С‡ РґР»СЏ Р·Р°РіСЂСѓР·РєРё. РџСЂРѕРІРµСЂСЊС‚Рµ С‚Р°Р±Р»РёС†Сѓ '" & SOURCE_TABLE_NAME & "'.", vbExclamation
         Cleanup
         Exit Sub
     End If
     
-    g_logger.LogMessage LL_INFO, 0, "Загружено задач: " & taskCount
+    g_logger.LogMessage LL_INFO, 0, "Р—Р°РіСЂСѓР¶РµРЅРѕ Р·Р°РґР°С‡: " & taskCount
     
     g_manager.Start
     
@@ -101,24 +101,24 @@ Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO, _
     Loop
     
     Dim resultMsg As String
-    resultMsg = "Все загрузки и постобработка завершены!" & vbNewLine & _
-                "Успешно: " & g_manager.CompletedCount & vbNewLine & _
-                "Ошибок: " & g_manager.FailedCount
+    resultMsg = "Р’СЃРµ Р·Р°РіСЂСѓР·РєРё Рё РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєР° Р·Р°РІРµСЂС€РµРЅС‹!" & vbNewLine & _
+                "РЈСЃРїРµС€РЅРѕ: " & g_manager.CompletedCount & vbNewLine & _
+                "РћС€РёР±РѕРє: " & g_manager.FailedCount
     
     If g_manager.FailedCount > 0 Then
-        resultMsg = resultMsg & vbNewLine & vbNewLine & "Проверьте лог для деталей."
+        resultMsg = resultMsg & vbNewLine & vbNewLine & "РџСЂРѕРІРµСЂСЊС‚Рµ Р»РѕРі РґР»СЏ РґРµС‚Р°Р»РµР№."
         MsgBox resultMsg, vbExclamation
     Else
         MsgBox resultMsg, vbInformation
     End If
     
-    g_logger.LogMessage LL_INFO, 0, "=== СЕССИЯ ЗАВЕРШЕНА ==="
+    g_logger.LogMessage LL_INFO, 0, "=== РЎР•РЎРЎРРЇ Р—РђР’Р•Р РЁР•РќРђ ==="
     Cleanup
     Exit Sub
     
 CriticalError:
-    MsgBox "КРИТИЧЕСКАЯ ОШИБКА: " & Err.Description & vbNewLine & _
-           "Код: " & Err.Number, vbCritical, "Критическая ошибка"
+    MsgBox "РљР РРўРР§Р•РЎРљРђРЇ РћРЁРР‘РљРђ: " & Err.Description & vbNewLine & _
+           "РљРѕРґ: " & Err.Number, vbCritical, "РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР°"
     On Error Resume Next
     Dim critFile As Integer: critFile = FreeFile
     Open g_criticalErrorLogPath For Append As #critFile
@@ -141,7 +141,7 @@ End Function
 Private Function FindSourceSheet() As Worksheet
     Dim ws As Worksheet
     Dim namesToTry As Variant
-    namesToTry = Array(SOURCE_SHEET_NAME, "Sheet1", "Лист1")
+    namesToTry = Array(SOURCE_SHEET_NAME, "Sheet1", "Р›РёСЃС‚1")
     
     Dim i As Long
     For i = LBound(namesToTry) To UBound(namesToTry)
@@ -263,56 +263,56 @@ End Sub
 Public Sub StopAllDownloads()
     If Not g_manager Is Nothing Then
         g_manager.StopAll
-        Debug.Print "Все загрузки остановлены пользователем"
+        Debug.Print "Р’СЃРµ Р·Р°РіСЂСѓР·РєРё РѕСЃС‚Р°РЅРѕРІР»РµРЅС‹ РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј"
     End If
 End Sub
 
 Public Sub PauseDownloads()
     If Not g_manager Is Nothing Then
         g_manager.Pause
-        Debug.Print "Загрузки приостановлены"
+        Debug.Print "Р—Р°РіСЂСѓР·РєРё РїСЂРёРѕСЃС‚Р°РЅРѕРІР»РµРЅС‹"
     End If
 End Sub
 
 Public Sub Resume_Downloads()
     If Not g_manager Is Nothing Then
         g_manager.Resume_
-        Debug.Print "Загрузки возобновлены"
+        Debug.Print "Р—Р°РіСЂСѓР·РєРё РІРѕР·РѕР±РЅРѕРІР»РµРЅС‹"
     End If
 End Sub
 
 ' ============================================================================
-' ГЛОБАЛЬНАЯ ФУНКЦИЯ ПОСТОБРАБОТКИ (вызывается через StateLossCallback)
+' Р“Р›РћР‘РђР›Р¬РќРђРЇ Р¤РЈРќРљР¦РРЇ РџРћРЎРўРћР‘Р РђР‘РћРўРљР (РІС‹Р·С‹РІР°РµС‚СЃСЏ С‡РµСЂРµР· StateLossCallback)
 ' ============================================================================
 Public Sub ExecutePostProcess(ByVal TaskId As Long, ByVal filePath As String, ByVal macroName As String)
     On Error GoTo ErrorHandler
     
     If Dir(filePath) = "" Then
         If Not g_logger Is Nothing Then
-            g_logger.LogMessage LL_WARNING, TaskId, "Файл исчез перед постобработкой: " & filePath
+            g_logger.LogMessage LL_WARNING, TaskId, "Р¤Р°Р№Р» РёСЃС‡РµР· РїРµСЂРµРґ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєРѕР№: " & filePath
         End If
         If Not g_manager Is Nothing Then g_manager.FinalizeTask TaskId, False
         Exit Sub
     End If
     
     If Not g_logger Is Nothing Then
-        g_logger.LogMessage LL_INFO, TaskId, "Запуск постобработки: " & macroName & "(" & filePath & ")"
+        g_logger.LogMessage LL_INFO, TaskId, "Р—Р°РїСѓСЃРє РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєРё: " & macroName & "(" & filePath & ")"
     End If
     
-    ' Устанавливаем контекст для асинхронных операций
+    ' РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј РєРѕРЅС‚РµРєСЃС‚ РґР»СЏ Р°СЃРёРЅС…СЂРѕРЅРЅС‹С… РѕРїРµСЂР°С†РёР№
     g_currentPostProcessTaskId = TaskId
     
-    ' Вызов пользовательского макроса
+    ' Р’С‹Р·РѕРІ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРѕРіРѕ РјР°РєСЂРѕСЃР°
     Dim result As Variant
     result = Application.Run(macroName, filePath)
     
-    ' Если макрос вернул 1 - операция асинхронная, FinalizeTask вызовется позже
+    ' Р•СЃР»Рё РјР°РєСЂРѕСЃ РІРµСЂРЅСѓР» 1 - РѕРїРµСЂР°С†РёСЏ Р°СЃРёРЅС…СЂРѕРЅРЅР°СЏ, FinalizeTask РІС‹Р·РѕРІРµС‚СЃСЏ РїРѕР·Р¶Рµ
     If IsNumeric(result) And CLng(result) = 1 Then
         If Not g_logger Is Nothing Then
-            g_logger.LogMessage LL_DEBUG, TaskId, "Асинхронная постобработка запущена, ожидание маркера"
+            g_logger.LogMessage LL_DEBUG, TaskId, "РђСЃРёРЅС…СЂРѕРЅРЅР°СЏ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєР° Р·Р°РїСѓС‰РµРЅР°, РѕР¶РёРґР°РЅРёРµ РјР°СЂРєРµСЂР°"
         End If
     Else
-        ' Синхронная операция - сразу финализируем
+        ' РЎРёРЅС…СЂРѕРЅРЅР°СЏ РѕРїРµСЂР°С†РёСЏ - СЃСЂР°Р·Сѓ С„РёРЅР°Р»РёР·РёСЂСѓРµРј
         If Not g_manager Is Nothing Then
             g_manager.FinalizeTask TaskId, True
         End If
@@ -321,7 +321,7 @@ Public Sub ExecutePostProcess(ByVal TaskId As Long, ByVal filePath As String, By
     
 ErrorHandler:
     If Not g_logger Is Nothing Then
-        g_logger.LogMessage LL_ERROR, TaskId, "Ошибка в макросе '" & macroName & "': " & Err.Description, Err.Number
+        g_logger.LogMessage LL_ERROR, TaskId, "РћС€РёР±РєР° РІ РјР°РєСЂРѕСЃРµ '" & macroName & "': " & Err.Description, Err.Number
     End If
     
     If Not g_manager Is Nothing Then

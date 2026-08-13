@@ -8,19 +8,19 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
-' Класс: CNetworkMonitor
-' Назначение: Мониторинг загруженности сети в % от пропускной способности
+' РљР»Р°СЃСЃ: CNetworkMonitor
+' РќР°Р·РЅР°С‡РµРЅРёРµ: РњРѕРЅРёС‚РѕСЂРёРЅРі Р·Р°РіСЂСѓР¶РµРЅРЅРѕСЃС‚Рё СЃРµС‚Рё РІ % РѕС‚ РїСЂРѕРїСѓСЃРєРЅРѕР№ СЃРїРѕСЃРѕР±РЅРѕСЃС‚Рё
 ' ============================================================================
 Option Explicit
 
-Private m_maxUsagePercent As Double  ' Максимально допустимая загрузка в % (0 = без лимита)
-Private m_currentUsagePercent As Double ' Текущая загрузка в %
-Private m_interfaceFilter As String  ' Фильтр имени адаптера (например, "Wi-Fi" или "Ethernet")
+Private m_maxUsagePercent As Double  ' РњР°РєСЃРёРјР°Р»СЊРЅРѕ РґРѕРїСѓСЃС‚РёРјР°СЏ Р·Р°РіСЂСѓР·РєР° РІ % (0 = Р±РµР· Р»РёРјРёС‚Р°)
+Private m_currentUsagePercent As Double ' РўРµРєСѓС‰Р°СЏ Р·Р°РіСЂСѓР·РєР° РІ %
+Private m_interfaceFilter As String  ' Р¤РёР»СЊС‚СЂ РёРјРµРЅРё Р°РґР°РїС‚РµСЂР° (РЅР°РїСЂРёРјРµСЂ, "Wi-Fi" РёР»Рё "Ethernet")
 
 ' ============================================================================
-' Инициализация
-' maxUsagePercent: Лимит в процентах (0-100). 0 означает отсутствие лимита.
-' interfaceFilter: Часть имени адаптера для фильтрации ("" = суммировать все физические)
+' РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ
+' maxUsagePercent: Р›РёРјРёС‚ РІ РїСЂРѕС†РµРЅС‚Р°С… (0-100). 0 РѕР·РЅР°С‡Р°РµС‚ РѕС‚СЃСѓС‚СЃС‚РІРёРµ Р»РёРјРёС‚Р°.
+' interfaceFilter: Р§Р°СЃС‚СЊ РёРјРµРЅРё Р°РґР°РїС‚РµСЂР° РґР»СЏ С„РёР»СЊС‚СЂР°С†РёРё ("" = СЃСѓРјРјРёСЂРѕРІР°С‚СЊ РІСЃРµ С„РёР·РёС‡РµСЃРєРёРµ)
 ' ============================================================================
 Public Sub Init(ByVal MaxUsagePercent As Double, Optional ByVal InterfaceFilter As String = "")
     If MaxUsagePercent < 0 Then MaxUsagePercent = 0
@@ -32,7 +32,7 @@ Public Sub Init(ByVal MaxUsagePercent As Double, Optional ByVal InterfaceFilter 
 End Sub
 
 ' ============================================================================
-' Обновление данных о сети (вызывать из таймера менеджера)
+' РћР±РЅРѕРІР»РµРЅРёРµ РґР°РЅРЅС‹С… Рѕ СЃРµС‚Рё (РІС‹Р·С‹РІР°С‚СЊ РёР· С‚Р°Р№РјРµСЂР° РјРµРЅРµРґР¶РµСЂР°)
 ' ============================================================================
 Public Sub Refresh()
     On Error GoTo ErrHandler
@@ -41,8 +41,8 @@ Public Sub Refresh()
     Set wmi = GetObject("winmgmts:\\.\root\cimv2")
     
     Dim query As String
-    ' CurrentBandwidth > 0 отсекает виртуальные адаптеры (VPN, Hyper-V),
-    ' у которых часто бывает 0 или некорректная пропускная способность.
+    ' CurrentBandwidth > 0 РѕС‚СЃРµРєР°РµС‚ РІРёСЂС‚СѓР°Р»СЊРЅС‹Рµ Р°РґР°РїС‚РµСЂС‹ (VPN, Hyper-V),
+    ' Сѓ РєРѕС‚РѕСЂС‹С… С‡Р°СЃС‚Рѕ Р±С‹РІР°РµС‚ 0 РёР»Рё РЅРµРєРѕСЂСЂРµРєС‚РЅР°СЏ РїСЂРѕРїСѓСЃРєРЅР°СЏ СЃРїРѕСЃРѕР±РЅРѕСЃС‚СЊ.
     If m_interfaceFilter = "" Then
         query = "SELECT Name, BytesTotalPerSec, CurrentBandwidth FROM Win32_PerfFormattedData_Tcpip_NetworkInterface WHERE CurrentBandwidth > 0"
     Else
@@ -63,27 +63,27 @@ Public Sub Refresh()
         End If
     Next item
     
-    ' Расчет процента загрузки:
-    ' BytesTotalPerSec (Байт/сек) * 8 = Бит/сек
-    ' (Бит/сек / CurrentBandwidth (Бит/сек)) * 100 = Процент
+    ' Р Р°СЃС‡РµС‚ РїСЂРѕС†РµРЅС‚Р° Р·Р°РіСЂСѓР·РєРё:
+    ' BytesTotalPerSec (Р‘Р°Р№С‚/СЃРµРє) * 8 = Р‘РёС‚/СЃРµРє
+    ' (Р‘РёС‚/СЃРµРє / CurrentBandwidth (Р‘РёС‚/СЃРµРє)) * 100 = РџСЂРѕС†РµРЅС‚
     If totalBandwidth > 0 Then
         m_currentUsagePercent = ((totalBytesPerSec * 8) / totalBandwidth) * 100
     Else
         m_currentUsagePercent = 0
     End If
     
-    ' Округляем до 2 знаков для чистоты логов
+    ' РћРєСЂСѓРіР»СЏРµРј РґРѕ 2 Р·РЅР°РєРѕРІ РґР»СЏ С‡РёСЃС‚РѕС‚С‹ Р»РѕРіРѕРІ
     m_currentUsagePercent = Round(m_currentUsagePercent, 2)
     
     Exit Sub
 
 ErrHandler:
-    ' В случае ошибки WMI считаем, что лимита нет, чтобы не блокировать загрузки
+    ' Р’ СЃР»СѓС‡Р°Рµ РѕС€РёР±РєРё WMI СЃС‡РёС‚Р°РµРј, С‡С‚Рѕ Р»РёРјРёС‚Р° РЅРµС‚, С‡С‚РѕР±С‹ РЅРµ Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ Р·Р°РіСЂСѓР·РєРё
     m_currentUsagePercent = 0
 End Sub
 
 ' ============================================================================
-' Свойства
+' РЎРІРѕР№СЃС‚РІР°
 ' ============================================================================
 Public Property Get IsOverLimit() As Boolean
     If m_maxUsagePercent <= 0 Then

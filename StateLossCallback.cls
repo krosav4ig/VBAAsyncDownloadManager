@@ -1,4 +1,4 @@
-VERSION 1.0 CLASS
+VERSION 1.0 CLASS 
 BEGIN
   MultiUse = -1  'True
 END
@@ -8,9 +8,9 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 ' ============================================================================
-' Модуль: StateLossCallback.cls
-' Назначение: Гарантированный вызов макроса даже при потере состояния VBA
-' Оригинальный код: https://github.com/cristianbuse/VBA-StateLossCallback
+' РњРѕРґСѓР»СЊ: StateLossCallback.cls
+' РќР°Р·РЅР°С‡РµРЅРёРµ: Р“Р°СЂР°РЅС‚РёСЂРѕРІР°РЅРЅС‹Р№ РІС‹Р·РѕРІ РјР°РєСЂРѕСЃР° РґР°Р¶Рµ РїСЂРё РїРѕС‚РµСЂРµ СЃРѕСЃС‚РѕСЏРЅРёСЏ VBA
+' РћСЂРёРіРёРЅР°Р»СЊРЅС‹Р№ РєРѕРґ: https://github.com/cristianbuse/VBA-StateLossCallback
 ' ============================================================================
 
 '''=============================================================================

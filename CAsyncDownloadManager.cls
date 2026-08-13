@@ -108,21 +108,21 @@ Public Sub Init(ByVal maxConcurrent As Long, ByVal callback As IDownloadCallback
     If maxNetworkUsagePercent > 0 Then
         limitStr = maxNetworkUsagePercent & "%"
     Else
-        limitStr = "Нет"
+        limitStr = "РќРµС‚"
     End If
     
-    LogMessage LL_INFO, "Менеджер инициализирован: maxConcurrent=" & m_maxConcurrent & _
-                        ", Лимит сети=" & limitStr
+    LogMessage LL_INFO, "РњРµРЅРµРґР¶РµСЂ РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅ: maxConcurrent=" & m_maxConcurrent & _
+                        ", Р›РёРјРёС‚ СЃРµС‚Рё=" & limitStr
     Exit Sub
 ErrorHandler:
-    LogMessage LL_CRITICAL, "Ошибка инициализации: " & Err.Description, Err.Number
+    LogMessage LL_CRITICAL, "РћС€РёР±РєР° РёРЅРёС†РёР°Р»РёР·Р°С†РёРё: " & Err.Description, Err.Number
 End Sub
 
 Public Sub AddTask(ByVal url As String, ByVal destPath As String)
     On Error GoTo ErrorHandler
     
     If url = "" Or destPath = "" Then
-        LogMessage LL_WARNING, "Пропущена задача с пустым URL или путём"
+        LogMessage LL_WARNING, "РџСЂРѕРїСѓС‰РµРЅР° Р·Р°РґР°С‡Р° СЃ РїСѓСЃС‚С‹Рј URL РёР»Рё РїСѓС‚С‘Рј"
         Exit Sub
     End If
     
@@ -137,24 +137,24 @@ Public Sub AddTask(ByVal url As String, ByVal destPath As String)
     m_nextTaskId = m_nextTaskId + 1
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка добавления задачи: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "РћС€РёР±РєР° РґРѕР±Р°РІР»РµРЅРёСЏ Р·Р°РґР°С‡Рё: " & Err.Description, Err.Number
 End Sub
 
 Public Sub Start()
     If m_isRunning Then
-        LogMessage LL_WARNING, "Менеджер уже запущен"
+        LogMessage LL_WARNING, "РњРµРЅРµРґР¶РµСЂ СѓР¶Рµ Р·Р°РїСѓС‰РµРЅ"
         Exit Sub
     End If
     
     If m_pendingTasks.count = 0 And m_activeWorkers.count = 0 Then
-        LogMessage LL_WARNING, "Нет задач для выполнения"
+        LogMessage LL_WARNING, "РќРµС‚ Р·Р°РґР°С‡ РґР»СЏ РІС‹РїРѕР»РЅРµРЅРёСЏ"
         Exit Sub
     End If
     
     m_isRunning = True
     m_isPaused = False
     
-    LogMessage LL_INFO, "Запуск менеджера. Всего задач: " & m_totalTasks
+    LogMessage LL_INFO, "Р—Р°РїСѓСЃРє РјРµРЅРµРґР¶РµСЂР°. Р’СЃРµРіРѕ Р·Р°РґР°С‡: " & m_totalTasks
     
     Dim i As Long
     For i = 1 To m_maxConcurrent
@@ -167,13 +167,13 @@ End Sub
 Public Sub Pause()
     If Not m_isRunning Then Exit Sub
     m_isPaused = True
-    LogMessage LL_INFO, "Поставлен на паузу"
+    LogMessage LL_INFO, "РџРѕСЃС‚Р°РІР»РµРЅ РЅР° РїР°СѓР·Сѓ"
 End Sub
 
 Public Sub Resume_()
     If Not m_isRunning Then Exit Sub
     m_isPaused = False
-    LogMessage LL_INFO, "Возобновлён"
+    LogMessage LL_INFO, "Р’РѕР·РѕР±РЅРѕРІР»С‘РЅ"
     
     Dim i As Long
     For i = m_activeWorkers.count + 1 To m_maxConcurrent
@@ -182,7 +182,7 @@ Public Sub Resume_()
 End Sub
 
 Public Sub StopAll()
-    LogMessage LL_INFO, "Остановка всех загрузок"
+    LogMessage LL_INFO, "РћСЃС‚Р°РЅРѕРІРєР° РІСЃРµС… Р·Р°РіСЂСѓР·РѕРє"
     
     m_isRunning = False
     m_isPaused = False
@@ -197,7 +197,7 @@ Public Sub StopAll()
     Set m_activeWorkers = New Collection
     Set m_pendingTasks = New Collection
     
-    ' Отменяем все задачи постобработки
+    ' РћС‚РјРµРЅСЏРµРј РІСЃРµ Р·Р°РґР°С‡Рё РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєРё
     On Error Resume Next
     While m_postProcessQueue.count > 0
         Dim cb As StateLossCallback
@@ -208,7 +208,7 @@ Public Sub StopAll()
     On Error GoTo 0
     
     CancelTimer
-    LogMessage LL_INFO, "Все загрузки остановлены"
+    LogMessage LL_INFO, "Р’СЃРµ Р·Р°РіСЂСѓР·РєРё РѕСЃС‚Р°РЅРѕРІР»РµРЅС‹"
 End Sub
 
 Private Sub ScheduleTimer()
@@ -220,7 +220,7 @@ Private Sub ScheduleTimer()
     On Error Resume Next
     Application.OnTime m_nextTimer, m_timerCallbackName, , True
     If Err.Number <> 0 Then
-        LogMessage LL_ERROR, "Ошибка планирования таймера: " & Err.Description, Err.Number
+        LogMessage LL_ERROR, "РћС€РёР±РєР° РїР»Р°РЅРёСЂРѕРІР°РЅРёСЏ С‚Р°Р№РјРµСЂР°: " & Err.Description, Err.Number
         m_timerScheduled = False
     End If
     On Error GoTo 0
@@ -261,8 +261,8 @@ Public Sub TimerCheck()
             m_netMonitor.Refresh
             If m_netMonitor.IsOverLimit Then
                 canLaunchNew = False
-                LogMessage LL_DEBUG, "Сеть перегружена: " & Format(m_netMonitor.CurrentUsagePercent, "0.0") & _
-                                   "% (Лимит: " & m_netMonitor.MaxUsagePercent & "%). Ожидание..."
+                LogMessage LL_DEBUG, "РЎРµС‚СЊ РїРµСЂРµРіСЂСѓР¶РµРЅР°: " & Format(m_netMonitor.CurrentUsagePercent, "0.0") & _
+                                   "% (Р›РёРјРёС‚: " & m_netMonitor.MaxUsagePercent & "%). РћР¶РёРґР°РЅРёРµ..."
             End If
         End If
         
@@ -274,7 +274,7 @@ Public Sub TimerCheck()
         End If
     End If
     
-    ' Проверка завершения всех задач (включая постобработку)
+    ' РџСЂРѕРІРµСЂРєР° Р·Р°РІРµСЂС€РµРЅРёСЏ РІСЃРµС… Р·Р°РґР°С‡ (РІРєР»СЋС‡Р°СЏ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєСѓ)
     Dim pendingPostProcess As Long
     pendingPostProcess = 0
     If Not g_pendingAsyncMarkers Is Nothing Then pendingPostProcess = g_pendingAsyncMarkers.count
@@ -289,7 +289,7 @@ Public Sub TimerCheck()
     ScheduleTimer
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка в TimerCheck: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "РћС€РёР±РєР° РІ TimerCheck: " & Err.Description, Err.Number
     On Error Resume Next
     ScheduleTimer
     On Error GoTo 0
@@ -316,7 +316,7 @@ Private Sub CheckStuckWorkers()
         If Not worker Is Nothing Then
             On Error Resume Next
             If worker.IsStuck() Then
-                LogMessage LL_WARNING, "Обнаружен зависший воркер #" & key & ", рестарт"
+                LogMessage LL_WARNING, "РћР±РЅР°СЂСѓР¶РµРЅ Р·Р°РІРёСЃС€РёР№ РІРѕСЂРєРµСЂ #" & key & ", СЂРµСЃС‚Р°СЂС‚"
                 worker.Restart
             End If
             On Error GoTo 0
@@ -345,7 +345,7 @@ Private Sub CheckSilentCompletion()
         If Not worker Is Nothing Then
             On Error Resume Next
             If worker.CheckAndCompleteIfFileExists() Then
-                LogMessage LL_INFO, "Тихое завершение задачи #" & key
+                LogMessage LL_INFO, "РўРёС…РѕРµ Р·Р°РІРµСЂС€РµРЅРёРµ Р·Р°РґР°С‡Рё #" & key
             End If
             On Error GoTo 0
         End If
@@ -389,15 +389,15 @@ Private Function LaunchNextWorker() As Boolean
 End Function
 
 ' ============================================================================
-' Вызывается воркером сразу после скачивания файла
-' Освобождает слот для новых загрузок, не дожидаясь постобработки!
+' Р’С‹Р·С‹РІР°РµС‚СЃСЏ РІРѕСЂРєРµСЂРѕРј СЃСЂР°Р·Сѓ РїРѕСЃР»Рµ СЃРєР°С‡РёРІР°РЅРёСЏ С„Р°Р№Р»Р°
+' РћСЃРІРѕР±РѕР¶РґР°РµС‚ СЃР»РѕС‚ РґР»СЏ РЅРѕРІС‹С… Р·Р°РіСЂСѓР·РѕРє, РЅРµ РґРѕР¶РёРґР°СЏСЃСЊ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєРё!
 ' ============================================================================
 Public Sub OnDownloadComplete(ByVal TaskId As Long, ByVal destPath As String, ByVal macroName As String)
     On Error GoTo ErrorHandler
     
     LogMessage LL_INFO, "OnDownloadComplete: TaskId='" & TaskId & ",  macroName='" & macroName & "', destPath='" & destPath & "'"
     
-    ' 1. Мгновенно освобождаем слот и запускаем следующую задачу
+    ' 1. РњРіРЅРѕРІРµРЅРЅРѕ РѕСЃРІРѕР±РѕР¶РґР°РµРј СЃР»РѕС‚ Рё Р·Р°РїСѓСЃРєР°РµРј СЃР»РµРґСѓСЋС‰СѓСЋ Р·Р°РґР°С‡Сѓ
     On Error Resume Next
     m_activeWorkers.Remove CStr(TaskId)
     On Error GoTo 0
@@ -407,25 +407,25 @@ Public Sub OnDownloadComplete(ByVal TaskId As Long, ByVal destPath As String, By
         If Not LaunchNextWorker() Then Exit For
     Next i
     
-    ' 2. Если нужна постобработка - ставим в очередь через StateLossCallback
+    ' 2. Р•СЃР»Рё РЅСѓР¶РЅР° РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєР° - СЃС‚Р°РІРёРј РІ РѕС‡РµСЂРµРґСЊ С‡РµСЂРµР· StateLossCallback
     If macroName <> "" And destPath <> "" Then
         Dim cb As StateLossCallback
         Set cb = New StateLossCallback
         cb.InitByMacroName "ExecutePostProcess", TaskId, destPath, macroName
         
         m_postProcessQueue.Add cb
-        LogMessage LL_INFO, "Задача #" & TaskId & " скачана. Ожидает постобработки."
+        LogMessage LL_INFO, "Р—Р°РґР°С‡Р° #" & TaskId & " СЃРєР°С‡Р°РЅР°. РћР¶РёРґР°РµС‚ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєРё."
     Else
         FinalizeTask TaskId, True
     End If
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка в OnDownloadComplete: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "РћС€РёР±РєР° РІ OnDownloadComplete: " & Err.Description, Err.Number
     FinalizeTask TaskId, False
 End Sub
 
 ' ============================================================================
-' Финализация задачи (вызывается после успешной постобработки или при ошибке)
+' Р¤РёРЅР°Р»РёР·Р°С†РёСЏ Р·Р°РґР°С‡Рё (РІС‹Р·С‹РІР°РµС‚СЃСЏ РїРѕСЃР»Рµ СѓСЃРїРµС€РЅРѕР№ РїРѕСЃС‚РѕР±СЂР°Р±РѕС‚РєРё РёР»Рё РїСЂРё РѕС€РёР±РєРµ)
 ' ============================================================================
 Public Sub FinalizeTask(ByVal TaskId As Long, ByVal success As Boolean)
     On Error GoTo ErrorHandler
@@ -436,11 +436,11 @@ Public Sub FinalizeTask(ByVal TaskId As Long, ByVal success As Boolean)
         m_failedCount = m_failedCount + 1
     End If
     
-    LogMessage LL_DEBUG, "Финализация задачи #" & TaskId & ", успех=" & success
+    LogMessage LL_DEBUG, "Р¤РёРЅР°Р»РёР·Р°С†РёСЏ Р·Р°РґР°С‡Рё #" & TaskId & ", СѓСЃРїРµС…=" & success
     RaiseEvent TaskCompleted(TaskId, success)
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, "Ошибка в FinalizeTask: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, "РћС€РёР±РєР° РІ FinalizeTask: " & Err.Description, Err.Number
 End Sub
 
 Public Property Get IsBusy() As Boolean

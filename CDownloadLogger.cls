@@ -47,10 +47,10 @@ Public Sub Init(ByVal logSheet As Worksheet, _
     If Not logSheet Is Nothing Then InitLogSheet
     If m_logFilePath <> "" Then OpenLogFile
     
-    LogMessage LL_INFO, 0, "Логгер инициализирован. Уровень: " & CStr(m_logLevel)
+    LogMessage LL_INFO, 0, "Р›РѕРіРіРµСЂ РёРЅРёС†РёР°Р»РёР·РёСЂРѕРІР°РЅ. РЈСЂРѕРІРµРЅСЊ: " & CStr(m_logLevel)
     Exit Sub
 ErrorHandler:
-    Debug.Print "CRITICAL: Ошибка инициализации логгера: " & Err.Description
+    Debug.Print "CRITICAL: РћС€РёР±РєР° РёРЅРёС†РёР°Р»РёР·Р°С†РёРё Р»РѕРіРіРµСЂР°: " & Err.Description
 End Sub
 
 Private Sub InitLogSheet()
@@ -165,7 +165,7 @@ End Function
 
 Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String, ByVal destPath As String)
     On Error GoTo ErrorHandler
-    LogMessage LL_INFO, TaskId, "Начало загрузки: " & url
+    LogMessage LL_INFO, TaskId, "РќР°С‡Р°Р»Рѕ Р·Р°РіСЂСѓР·РєРё: " & url
     
     If m_logSheet Is Nothing Then Exit Sub
     
@@ -177,7 +177,7 @@ Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String,
         .Cells(newRow, colTaskId).Value = TaskId
         .Cells(newRow, colUrl).Value = url
         .Cells(newRow, colDest).Value = destPath
-        .Cells(newRow, colStatus).Value = "Загрузка..."
+        .Cells(newRow, colStatus).Value = "Р—Р°РіСЂСѓР·РєР°..."
         .Cells(newRow, colProgress).Value = 0
         .Cells(newRow, colStartTime).Value = Now
         .Cells(newRow, colRetryCount).Value = 0
@@ -187,7 +187,7 @@ Private Sub IDownloadCallback_OnStart(ByVal TaskId As Long, ByVal url As String,
     m_lastPercentMap(CStr(TaskId)) = -1
     Exit Sub
 ErrorHandler:
-    LogMessage LL_ERROR, TaskId, "Ошибка OnStart: " & Err.Description, Err.Number
+    LogMessage LL_ERROR, TaskId, "РћС€РёР±РєР° OnStart: " & Err.Description, Err.Number
 End Sub
 
 Private Sub IDownloadCallback_OnProgress(ByVal TaskId As Long, ByVal bytesReceived As Currency, _
@@ -227,13 +227,13 @@ Private Sub IDownloadCallback_OnComplete(ByVal TaskId As Long, ByVal url As Stri
     
     Dim status As String, logLevel As Long
     If success Then
-        status = "Завершено"
+        status = "Р—Р°РІРµСЂС€РµРЅРѕ"
         logLevel = LL_INFO
-        LogMessage logLevel, TaskId, "Загрузка успешно завершена: " & destPath
+        LogMessage logLevel, TaskId, "Р—Р°РіСЂСѓР·РєР° СѓСЃРїРµС€РЅРѕ Р·Р°РІРµСЂС€РµРЅР°: " & destPath
     Else
-        status = "Ошибка"
+        status = "РћС€РёР±РєР°"
         logLevel = LL_ERROR
-        LogMessage logLevel, TaskId, "Ошибка загрузки: " & errorMsg
+        LogMessage logLevel, TaskId, "РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё: " & errorMsg
     End If
     
     If m_logSheet Is Nothing Then GoTo SkipExcel
@@ -259,7 +259,7 @@ Private Sub IDownloadCallback_OnComplete(ByVal TaskId As Long, ByVal url As Stri
 SkipExcel:
     Exit Sub
 ErrorHandler:
-    LogMessage LL_CRITICAL, TaskId, "Критическая ошибка в OnComplete: " & Err.Description, Err.Number
+    LogMessage LL_CRITICAL, TaskId, "РљСЂРёС‚РёС‡РµСЃРєР°СЏ РѕС€РёР±РєР° РІ OnComplete: " & Err.Description, Err.Number
 End Sub
 
 Private Sub IDownloadCallback_OnLog(ByVal level As Long, ByVal TaskId As Long, _
