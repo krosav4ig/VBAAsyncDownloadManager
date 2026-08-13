@@ -1,6 +1,11 @@
 Attribute VB_Name = "modPostProcess"
 Option Explicit
 
+' Константы для маркеров
+Public Const DONE_EXTENSION As String = ".done"
+Public Const ERR_EXTENSION As String = ".err"
+Public Const TMP_EXTENSION As String = ".tmp"
+
 #If VBA7 Then
     Private Declare PtrSafe Function GetTickCount Lib "kernel32" () As Long
 #Else
@@ -42,14 +47,17 @@ Public Function ConvertXlsxToCsv_Async(ByVal filePath As String) As Long
     csvPath = Left$(filePath, InStrRev(filePath, ".") - 1) & ".csv"
     
     Dim markerPath As String
-    markerPath = filePath & ".done"
+    markerPath = filePath & DONE_EXTENSION
+    
+    Dim errPath As String
+    errPath = filePath & ERR_EXTENSION
     
     ' Генерируем VBScript
     Dim vbsPath As String
     vbsPath = Environ$("TEMP") & "\convert_xlsx_" & GetTickCount() & "_" & g_currentPostProcessTaskId & ".vbs"
     
     Dim vbsCode As String
-    vbsCode = GenerateConvertVbs(filePath, csvPath, markerPath)
+    vbsCode = GenerateConvertVbs(filePath, csvPath, markerPath, errPath)
     
     ' Записываем VBScript во временный файл
     Dim fso As Object
@@ -92,34 +100,43 @@ End Function
 ' ============================================================================
 Private Function GenerateConvertVbs(ByVal xlsxPath As String, _
                                      ByVal csvPath As String, _
-                                     ByVal markerPath As String) As String
+                                     ByVal markerPath As String, _
+                                     ByVal errPath As String) As String
     Dim code As String
     
     code = "On Error Resume Next" & vbCrLf
-    code = code & "Dim xlApp, wb, fso, ts" & vbCrLf
-    code = code & "Set xlApp = createobject(""excel.application"")" & vbCrLf
-    'code = code & "Set xlApp = GetObject(""" & Environ("tmp") & "\fileconverter.xlsm"").Parent" & vbCrLf
+    code = code & "Dim xlApp, wb, fso, ts, errHappened" & vbCrLf
+    code = code & "errHappened = False" & vbCrLf
+    code = code & "Set xlApp = createobject(\"\"excel.application\"\")" & vbCrLf
     code = code & "xlApp.Visible = False" & vbCrLf
     code = code & "xlApp.DisplayAlerts = False" & vbCrLf
     code = code & "xlApp.AutomationSecurity = 3" & vbCrLf
     code = code & vbCrLf
-    code = code & "Set wb = xlApp.Workbooks.Open(""" & xlsxPath & """, 0, True)" & vbCrLf
+    code = code & "Set wb = xlApp.Workbooks.Open(\"\"" & xlsxPath & "\"\", 0, True)" & vbCrLf
     code = code & "If Err.Number = 0 Then" & vbCrLf
-    code = code & "  wb.SaveAs """ & csvPath & """, 6,,,,,,,,,,true" & vbCrLf
+    code = code & "  wb.SaveAs \"\"" & csvPath & "\"\", 6,,,,,,,,,,true" & vbCrLf
+    code = code & "  If Err.Number <> 0 Then errHappened = True" & vbCrLf
     code = code & "  wb.Close False" & vbCrLf
-    code = code & "  Set fso = CreateObject(""Scripting.FileSystemObject"")" & vbCrLf
-    code = code & "  fso.DeleteFile """ & xlsxPath & """, True" & vbCrLf
+    code = code & "  If Not errHappened Then" & vbCrLf
+    code = code & "    Set fso = CreateObject(\"\"Scripting.FileSystemObject\"\")" & vbCrLf
+    code = code & "    fso.DeleteFile \"\"" & xlsxPath & "\"\", True" & vbCrLf
+    code = code & "    If Err.Number <> 0 Then errHappened = True" & vbCrLf
+    code = code & "  End If" & vbCrLf
     code = code & "Else" & vbCrLf
+    code = code & "  errHappened = True" & vbCrLf
     code = code & "  If Not wb Is Nothing Then wb.Close False" & vbCrLf
     code = code & "End If" & vbCrLf
     code = code & vbCrLf
     code = code & "Set wb = Nothing" & vbCrLf
     code = code & "Set xlApp = Nothing" & vbCrLf
     code = code & vbCrLf
-    code = code & "Set fso = CreateObject(""Scripting.FileSystemObject"")" & vbCrLf
-    code = code & "Set ts = fso.CreateTextFile(""" & markerPath & """, True)" & vbCrLf
+    code = code & "Set fso = CreateObject(\"\"Scripting.FileSystemObject\"\")" & vbCrLf
+    code = code & "If errHappened Then" & vbCrLf
+    code = code & "  Set ts = fso.CreateTextFile(\"\"" & errPath & "\"\", True)" & vbCrLf
+    code = code & "Else" & vbCrLf
+    code = code & "  Set ts = fso.CreateTextFile(\"\"" & markerPath & "\"\", True)" & vbCrLf
+    code = code & "End If" & vbCrLf
     code = code & "ts.Close" & vbCrLf
-    
     GenerateConvertVbs = code
 End Function
 
@@ -141,18 +158,37 @@ Public Sub CheckAsyncMarkers()
         item = g_pendingAsyncMarkers.item(i)
         
         Dim markerPath As String: markerPath = item(0)
-        Dim TaskId As Long: TaskId = item(1)
+        Dim taskId As Long: taskId = item(1)
         
-        If fso.FileExists(markerPath) Then
-            ' Маркер найден - конвертация завершена
+        ' Формируем путь к файлу ошибки на основе базового пути
+        Dim basePath As String
+        basePath = Left(markerPath, Len(markerPath) - Len(DONE_EXTENSION))
+        Dim errPath As String
+        errPath = basePath & ERR_EXTENSION
+        
+        ' Проверяем наличие маркера успеха (.done) или ошибки (.err)
+        Dim successMarker As Boolean
+        Dim errorMarker As Boolean
+        successMarker = fso.FileExists(markerPath)
+        errorMarker = fso.FileExists(errPath)
+        
+        If successMarker Or errorMarker Then
+            ' Конвертация завершена (успешно или с ошибкой)
             On Error Resume Next
-            fso.DeleteFile markerPath, True
+            If successMarker Then fso.DeleteFile markerPath, True
+            If errorMarker Then fso.DeleteFile errPath, True
             On Error GoTo 0
             
-            Debug.Print "[PostProcess] Конвертация завершена для TaskId=" & TaskId
-            
-            If Not g_manager Is Nothing Then
-                g_manager.FinalizeTask TaskId, True
+            If successMarker Then
+                Debug.Print "[PostProcess] Конвертация успешна для TaskId=" & taskId
+                If Not g_manager Is Nothing Then
+                    g_manager.FinalizeTask taskId, True
+                End If
+            Else
+                Debug.Print "[PostProcess] Конвертация с ошибкой для TaskId=" & taskId & ", файл: " & errPath
+                If Not g_manager Is Nothing Then
+                    g_manager.FinalizeTask taskId, False
+                End If
             End If
             
             g_pendingAsyncMarkers.Remove i
@@ -179,8 +215,15 @@ Public Sub ClearAsyncMarkers()
         Dim item As Variant
         item = g_pendingAsyncMarkers.item(i)
         Dim markerPath As String: markerPath = item(0)
+        
+        Dim errPath As String
+        errPath = Left(markerPath, Len(markerPath) - Len(DONE_EXTENSION)) & ERR_EXTENSION
+        
         If fso.FileExists(markerPath) Then
             fso.DeleteFile markerPath, True
+        End If
+        If fso.FileExists(errPath) Then
+            fso.DeleteFile errPath, True
         End If
     Next i
     

@@ -95,7 +95,8 @@ Public Sub StartBatchDownload(Optional ByVal logLevel As Long = LL_INFO, _
         
         If DateDiff("s", lastStatusTime, Now) >= 5 Then
             lastStatusTime = Now
-            
+            g_manager.TimerCheck
+            CheckAsyncMarkers
         End If
         
     Loop

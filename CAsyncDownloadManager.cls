@@ -247,7 +247,9 @@ Public Sub TimerCheck()
     If m_postProcessQueue.count > 0 Then
         Dim cb As StateLossCallback
         Set cb = m_postProcessQueue.item(1)
+        On Error Resume Next
         m_postProcessQueue.Remove 1
+        On Error GoTo ErrorHandler
         Set cb = Nothing
     End If
     
