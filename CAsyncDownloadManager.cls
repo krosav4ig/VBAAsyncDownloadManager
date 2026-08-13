@@ -82,7 +82,7 @@ Public Sub Init(ByVal maxConcurrent As Long, ByVal callback As IDownloadCallback
     m_postProcessMacroName = postProcessMacroName
     
     
-    If postProcessMacroName = "" Then
+    If postProcessMacroName = "" and 0 Then
         Set m_xlApp = CreateObject("Excel.application")
         m_xlApp.Visible = 1
         With m_xlApp.Workbooks.Add
